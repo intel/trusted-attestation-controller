@@ -1,0 +1,20 @@
+# permissions for end users to view quoteattestations.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: viewer-role
+rules:
+- apiGroups:
+  - tcs.intel.com
+  resources:
+  - quoteattestations
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - tcs.intel.com
+  resources:
+  - quoteattestations/status
+  verbs:
+  - get

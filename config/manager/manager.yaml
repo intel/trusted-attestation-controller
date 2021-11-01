@@ -1,0 +1,118 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    control-plane: controller-manager
+  name: system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+  namespace: system
+  labels:
+    control-plane: controller-manager
+spec:
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        control-plane: controller-manager
+    spec:
+      # The data in the secret are base64 encoded.
+      # km-wrap expects them in PEM encoding.
+      # So, we first decode them in the init container
+      # before starting the actual controller container.
+      initContainers:
+      - name: decode-secrets
+        image: busybox
+        command: ['sh', '-c', 'set -x; for f in /tmp/certs/*; do cat $f | base64 -d > /certs/$(basename $f); done ; chown -R 5000:5000 /registration /kmra /certs']
+        volumeMounts:
+        - name: ca-secrets
+          mountPath: /certs/
+        - name: pre-ca-secrets
+          mountPath: /tmp/certs
+        - name: plugin-socket-dir
+          mountPath: /kmra
+        - name: registry-socket-dir
+          mountPath: /registration
+      containers:
+      - name: manager
+        command:
+        - /manager
+        args:
+        - --leader-elect
+        - --registration-path=/registration/controller.sock
+        image: controller:latest
+        imagePullPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 100m
+            memory: 30Mi
+          requests:
+            cpu: 100m
+            memory: 20Mi
+        volumeMounts:
+        - name: plugin-socket-dir
+          mountPath: /kmra
+        - name: registry-socket-dir
+          mountPath: /registration
+      - name: kmra-plugin
+        command:
+        - /kmra-plugin
+        args:
+        - --plugin-name=KMRA
+        - --plugin-socket-path=/kmra/kmra.sock
+        - --registry-socket-path=/registration/controller.sock
+        image: kmra-plugin:latest
+        resources:
+          limits:
+            cpu: 100m
+            memory: 30Mi
+          requests:
+            cpu: 100m
+            memory: 20Mi
+        envFrom:
+        - configMapRef:
+            name: key-server-config
+        volumeMounts:
+        - name: ca-secrets
+          mountPath: /certs/
+          readOnly: true
+        - name: plugin-socket-dir
+          mountPath: /kmra
+        - name: registry-socket-dir
+          mountPath: /registration
+      serviceAccountName: svcact
+      terminationGracePeriodSeconds: 10
+      volumes:
+      - name: plugin-socket-dir
+        hostPath:
+          path: /var/lib/trusted-attestation-controller/plugins/kmra
+          type: DirectoryOrCreate
+      - name: registry-socket-dir
+        hostPath:
+          path: /var/lib/trusted-attestation-controller/registry/
+          type: DirectoryOrCreate
+      - name: pre-ca-secrets
+        secret:
+         secretName: kmra-secrets
+      - name: ca-secrets
+        emptyDir: {}

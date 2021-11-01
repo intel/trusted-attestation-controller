@@ -1,0 +1,24 @@
+# permissions for end users to edit quoteattestations.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: editor-role
+rules:
+- apiGroups:
+  - tcs.intel.com
+  resources:
+  - quoteattestations
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - tcs.intel.com
+  resources:
+  - quoteattestations/status
+  verbs:
+  - get

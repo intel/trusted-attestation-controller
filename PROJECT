@@ -1,0 +1,15 @@
+domain: tac.intel.com
+layout:
+- go.kubebuilder.io/v3
+projectName: trusted-attestation-controller
+repo: github.com/intel/trusted-attestation-controller
+resources:
+- api:
+    crdVersion: v1alpha1
+    namespaced: true
+  controller: true
+  domain: tcs.intel.com
+  kind: QuoteAttestation
+  path: github.com/intel/trusted-certificate-issuer/api/v1alpha1
+  version: v1alpha1
+version: "3"

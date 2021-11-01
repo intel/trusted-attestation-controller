@@ -1,0 +1,34 @@
+# km-store
+
+kmStore provides implementation for KeyManager interface.
+It requires running host with appHSM server from KMRA project:
+https://01.org/key-management-reference-application-kmra
+The server provides REST API management interface secured
+with mutual TLS.
+The secure connection requires CA and SSL certificates to be
+available for kmStore.
+
+The client certificate and key can be obtained from host running
+appHSM service. By default, they are located in `/opt/intel/ca`
+directory. They can be copied using ssh access (e.g. scp).
+Please ask host admin for access or KMRA team to provide the files.
+
+Copy the key and certificate to the host with sgx attestation controller.
+The below target location of files is an example.
+
+kmra_host:/opt/intel/ca/ctk_loadkey.key -> /ca/ctk_loadkey.key
+kmra_host:/opt/intel/ca/ctk_loadkey.crt -> /ca/ctk_loadkey.crt
+kmra_host:/opt/intel/ca/ca.crt          -> /ca/ca.crt
+
+Use the correct data to create and configure kmStore instance.
+
+config := &kmstore.Config{
+    ClientCert: "/ca/ctk_loadkey.crt",
+    ClientKey:  "/ca/ctk_loadkey.key",
+    CaCert:     "/ca/ca.crt",
+    KMHost:     "kmra_host:5000",
+}
+kmra := kmstore.NewKmStore(config)
+
+NOTE: The minimum required version of appHSM REST API is 0.2.
+It is verified during initialization of kmStore instance.
