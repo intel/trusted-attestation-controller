@@ -5,7 +5,7 @@ go 1.18
 require (
 	github.com/go-logr/logr v1.2.3
 	github.com/golang/protobuf v1.5.2
-	github.com/intel/trusted-certificate-issuer v0.1.0
+	github.com/intel/trusted-certificate-issuer v0.1.1-0.20220415060119-fbf619007142
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.17.0
 	golang.org/x/net v0.0.0-20220412020605-290c469a71a5
