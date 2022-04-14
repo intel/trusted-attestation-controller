@@ -5,7 +5,6 @@ FROM golang:${GO_VERSION} as builder
 WORKDIR /
 COPY go.mod go.mod
 COPY go.sum go.sum
-COPY vendor vendor
 COPY controllers controllers
 COPY pkg pkg
 COPY plugins plugins
