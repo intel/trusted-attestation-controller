@@ -53,6 +53,10 @@ bin/protoc-v${PROTOC_VERSION}: bin/protoc-${PROTOC_VERSION}-linux-x86_64.zip
 bin/protoc-${PROTOC_VERSION}-linux-x86_64.zip:
 	wget https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip -P bin/
 
+vendor:
+	go mod tidy
+	go mod vendor
+
 fmt: ## Run go fmt against code.
 	go fmt ./...
 
@@ -67,7 +71,7 @@ test: manifests generate fmt vet ## Run tests.
 
 ##@ Build
 
-build: generate fmt vet ## Build manager binary.
+build: vendor generate fmt vet ## Build manager binary.
 	go build -o bin/manager main.go
 
 build-plugins: generate-proto fmt vet ## Build kmra-plugin binary.
