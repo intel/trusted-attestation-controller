@@ -25,7 +25,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	errutils "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -118,7 +117,7 @@ func (r *QuoteAttestationReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	defer patchStatus()
 
 	if qa.Spec.Type == v1alpha1.RequestTypeQuoteAttestation {
-		if ok, err := keyServer.AttestQuote(ctx, qa.Spec.SignerNames[0], qa.Spec.Quote, qa.Spec.PublicKey); err != nil {
+		if ok, err := keyServer.AttestQuote(ctx, qa.Spec.SignerName, qa.Spec.Quote, qa.Spec.PublicKey); err != nil {
 			l.Info("Error occurred while attesting quote", "error", err)
 			qa.Status.SetCondition(v1alpha1.ConditionReady, v1.ConditionFalse, v1alpha1.ReasonControllerReconcile, "Failed to attest: "+err.Error())
 		} else if !ok {
@@ -129,41 +128,27 @@ func (r *QuoteAttestationReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			qa.Status.SetCondition(v1alpha1.ConditionReady, v1.ConditionTrue, v1alpha1.ReasonControllerReconcile, "Quote verified successfully.")
 		}
 	} else if qa.Spec.Type == v1alpha1.RequestTypeKeyProvisioning {
-		errs := []error{}
-		secrets := map[string]v1alpha1.QuoteAttestationSecret{}
-		for _, signerName := range qa.Spec.SignerNames {
-			if _, ok := qa.Status.Secrets[signerName]; ok {
-				// if already provisioned the secret just ignore
-				// NOTE: Shall we check the existence of the secret??
-				continue
-			}
-			wrappedData, cert, err := keyServer.GetCAKeyCertificate(ctx, signerName, qa.Spec.Quote, qa.Spec.PublicKey)
-			if err != nil {
-				errs = append(errs, fmt.Errorf("%s: %v", signerName, err))
-				continue
-			}
-			l.Info("Got CA secrets", "singer", signerName)
-			secretName := secretNameForSigner(signerName)
-			log.Log.Info("Creating secret", "signer", signerName, "secret", secretName)
-			if err := createSecret(ctx, r.Client, wrappedData, cert, secretName, qa); err != nil {
-				l.Info("Failed to create CA secret", "error", err)
-				errs = append(errs, fmt.Errorf("%s: failed to create secret: %v", signerName, err))
-				continue
-			}
-
-			secrets[signerName] = v1alpha1.QuoteAttestationSecret{
-				SecretName: secretName, SecretType: keyServer.GetName(),
-			}
-		}
-
-		qa.Status.Secrets = secrets
-		if len(errs) != 0 {
-			l.Info("Key wrapping", "error", errutils.NewAggregate(errs).Error())
-			qa.Status.SetCondition(v1alpha1.ConditionReady, v1.ConditionFalse, v1alpha1.ReasonControllerReconcile, errutils.NewAggregate(errs).Error())
+		if qa.Spec.SecretName == "" {
+			qa.Status.SetCondition(v1alpha1.ConditionReady, v1.ConditionFalse, v1alpha1.ReasonControllerReconcile, "Invalid request: missing secret name")
 			return ctrl.Result{}, nil
 		}
+		wrappedData, cert, err := keyServer.GetCAKeyCertificate(ctx, qa.Spec.SignerName, qa.Spec.Quote, qa.Spec.PublicKey)
+		if err != nil {
+			err := fmt.Errorf("error from key server: %v", err)
+			l.Info("Failed to fetch CA secrets", "signerName", qa.Spec.SignerName, "error", err)
+			qa.Status.SetCondition(v1alpha1.ConditionReady, v1.ConditionFalse, v1alpha1.ReasonControllerReconcile, err.Error())
+			return ctrl.Result{Requeue: true}, nil
+		}
+
+		log.Log.Info("Preparing secret object", "signer", qa.Spec.SignerName, "secret", qa.Spec.SecretName)
+		if err := createSecret(ctx, r.Client, wrappedData, cert, qa.Spec.SecretName, qa); err != nil {
+			l.Info("Failed to create CA secret", "error", err)
+			qa.Status.SetCondition(v1alpha1.ConditionReady, v1.ConditionFalse, v1alpha1.ReasonControllerReconcile, err.Error())
+			return ctrl.Result{}, nil
+		}
+
 		l.Info("Key wrapping SUCCESS")
-		qa.Status.SetCondition(v1alpha1.ConditionReady, v1.ConditionTrue, v1alpha1.ReasonControllerReconcile, "All CA secrets are prepared successfully.")
+		qa.Status.SetCondition(v1alpha1.ConditionReady, v1.ConditionTrue, v1alpha1.ReasonControllerReconcile, "CA secrets are prepared successfully.")
 	} else {
 		qa.Status.SetCondition(v1alpha1.ConditionReady, v1.ConditionFalse, v1alpha1.ReasonControllerReconcile, "Unsupported request type")
 	}
