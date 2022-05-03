@@ -15,7 +15,9 @@
 
 ## Overview
 
-The Trusted Attestation Controller is a Kubernetes controller for reconciling the [QuoteAttestation](https://github.com/intel/trusted-certificate-issuer/blob/main/api/v1alpha1/quoteattestation_types.go) requests initiated by the [Trusted Certificate Service (TCS)](https://github.com/intel/trusted-certificate-issuer). It mediates between the TCS and the key server(s) which supports attestation services. The key servers could plugin to the controller by implementing the API provided by the controller.
+The Trusted Attestation Controller is a Kubernetes controller for reconciling the [QuoteAttestation](https://github.com/intel/trusted-certificate-issuer/blob/main/api/v1alpha1/quoteattestation_types.go) requests initiated by the [Trusted Certificate Service (TCS)](https://github.com/intel/trusted-certificate-issuer). It is a proxy between the TCS and the key server(s) which supports attestation services. The key servers could plugin to the controller by implementing the [API](docs/Developer.md#overview) provided by the controller.
+
+**Note**: The controller itself does not validate the SGX quote provided in the `QuoteAttestation`. Instead, it proxies the request (over UNIX domain socket) to the plugin container running in the same Pod.
 
 ## Getting started
 
