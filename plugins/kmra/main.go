@@ -25,8 +25,8 @@ import (
 
 	"github.com/go-logr/logr"
 	pluginapi "github.com/intel/trusted-attestation-controller/pkg/api/v1alpha1"
+	"github.com/intel/trusted-attestation-controller/pkg/plugin"
 	"github.com/intel/trusted-attestation-controller/plugins/kmra/client"
-	"github.com/intel/trusted-attestation-controller/plugins/kmra/plugin"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"k8s.io/klog/v2/klogr"
@@ -50,20 +50,27 @@ func main() {
 		os.Exit(1)
 	}
 
-	plugin, err := plugin.NewPlugin(pluginName, socketPath, &client.Config{
+	km, err := client.NewKmStore(&client.Config{
 		KMHost:     keyServerAddr,
 		CaCert:     "/certs/ca.crt",
 		ClientCert: "/certs/client.crt",
 		ClientKey:  "/certs/client.key",
 	})
 	if err != nil {
-		l.Error(err, "Failed to initialize plugin", "serverAddress", keyServerAddr)
+		l.Error(err, "Failed to initialize KMRA plugin", "serverAddress", keyServerAddr)
 		os.Exit(-1)
 	}
+
+	plugin, err := plugin.NewPlugin(pluginName, socketPath, km)
+	if err != nil {
+		l.Error(err, "Failed to initialize KMRA plugin", "serverAddress", keyServerAddr)
+		os.Exit(-1)
+	}
+
 	plugin.Start()
 
 	ctx, cancelRegistration := context.WithCancel(context.TODO())
-	go registerPlugin(ctx, l, pluginName, socketPath, controllerEndpoint)
+	go plugin.RegisterWithController(ctx, controllerEndpoint)
 
 	plugin.Wait()
 	plugin.Stop()

@@ -15,6 +15,7 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
@@ -23,11 +24,14 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/intel/trusted-attestation-controller/pkg/httpclient"
+	"github.com/intel/trusted-attestation-controller/pkg/plugin"
 	"k8s.io/klog/v2/klogr"
 )
 
@@ -89,10 +93,12 @@ type sysVersionResponse struct {
 type KmStore struct {
 	config *Config
 	log    logr.Logger
-	client httpClient
+	client httpclient.HttpClient
 }
 
-func NewKmStore(config *Config) (*KmStore, error) {
+var _ plugin.KeyManagerPlugin = &KmStore{}
+
+func NewKmStore(config *Config) (plugin.KeyManagerPlugin, error) {
 	if config == nil {
 		// create new empty config
 		config = &Config{}
@@ -134,7 +140,7 @@ func (km *KmStore) initialize() error {
 		return errors.New("kmStore is nil")
 	}
 	// Create new http client to send requests to keys server
-	client, err := newHttpClient(km.config.CaCert, km.config.ClientCert, km.config.ClientKey, km.config.Timeout)
+	client, err := httpclient.NewHttpClient(km.config.CaCert, km.config.ClientCert, km.config.ClientKey, km.config.Timeout)
 	if err != nil {
 		return err
 	}
@@ -154,15 +160,15 @@ func (km *KmStore) initialize() error {
 	return nil
 }
 
-func (km *KmStore) GetCAKeyAndCertificate(signerName string, quote []byte, publicKey []byte) ([]byte, []byte, error) {
+func (km *KmStore) GetCAKeyCertificate(ctx context.Context, signerName string, quote []byte, publicKey []byte) ([]byte, []byte, error) {
 	if km == nil {
 		return nil, nil, errors.New("kmStore is nil")
 	}
 	return km.keysExport(signerName, quote, publicKey)
 }
 
-// ValidateQuote uses post request to attest the quote match the key for a given signer
-func (km *KmStore) ValidateQuote(signerName string, quote []byte, publicKey []byte) (bool, error) {
+// AttestQuote uses post request to attest the quote match the key for a given signer
+func (km *KmStore) AttestQuote(ctx context.Context, signerName string, quote []byte, publicKey []byte) (bool, error) {
 	if km.client == nil {
 		return false, errors.New("http client is not initialized")
 	}
@@ -174,9 +180,12 @@ func (km *KmStore) ValidateQuote(signerName string, quote []byte, publicKey []by
 	}
 
 	km.log.Info("Sending post request", "url", attestationUrl, "request", string(requestBody))
-	response, err := km.client.post(attestationUrl, requestBody)
+	response, status, err := km.client.Post(attestationUrl, requestBody, nil)
 	if err != nil {
 		return false, fmt.Errorf("post request for attestation failed: %v", err)
+	}
+	if status != http.StatusOK {
+		return false, fmt.Errorf("quote attestation request returned unexpected status %d", status)
 	}
 
 	var result attestationResponse
@@ -200,9 +209,12 @@ func (km *KmStore) keysExport(signerName string, quote []byte, publicKey []byte)
 	}
 
 	km.log.Info("Sending post request", "url", keysServiceUrl, "request", string(requestBody))
-	response, err := km.client.post(keysServiceUrl, requestBody)
+	response, status, err := km.client.Post(keysServiceUrl, requestBody, nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("post request for keys failed: %v", err)
+	}
+	if status != http.StatusOK {
+		return nil, nil, fmt.Errorf("key export request returned unexpected status %d", status)
 	}
 
 	var returnedKeys keysExportResponse
@@ -227,9 +239,12 @@ func (km *KmStore) getApiVersion() (string, error) {
 	}
 	versionUrl := fmt.Sprintf("https://%s/sys/version", km.config.KMHost)
 	km.log.Info("Sending get request", "url", versionUrl)
-	response, err := km.client.get(versionUrl)
+	response, status, err := km.client.Get(versionUrl, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to get sys version from server: %v", err)
+	}
+	if status != http.StatusOK {
+		return "", fmt.Errorf("version request returned unexpected status %d", status)
 	}
 
 	var versions sysVersionResponse
