@@ -141,7 +141,12 @@ func (km *KmStore) initialize() error {
 		return errors.New("kmStore is nil")
 	}
 	// Create new http client to send requests to keys server
-	client, err := httpclient.NewHttpClient(km.config.CaCert, km.config.ClientCert, km.config.ClientKey, km.config.Timeout)
+	client, err := httpclient.NewHttpClient(&httpclient.Config{
+		CACertFile:     km.config.CaCert,
+		ClientCertFile: km.config.ClientCert,
+		KeyFile:        km.config.ClientKey,
+		RequestTimeout: km.config.Timeout,
+	})
 	if err != nil {
 		return err
 	}

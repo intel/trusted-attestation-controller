@@ -77,6 +77,7 @@ build: vendor generate fmt vet ## Build manager binary.
 
 build-plugins: generate-proto fmt vet ## Build kmra-plugin binary.
 	go build -o bin/kmra-plugin ./plugins/kmra/main.go
+	go build -o bin/isecl-plugin ./plugins/isecl/main.go
 
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./main.go

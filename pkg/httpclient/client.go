@@ -3,7 +3,9 @@ Copyright 2021-2022.
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
-    http://www.apache.org/licenses/LICENSE-2.0
+
+	http://www.apache.org/licenses/LICENSE-2.0
+
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -27,32 +29,47 @@ import (
 type HttpClient interface {
 	Get(url string, headers map[string]string) ([]byte, int, error)
 	Post(url string, request []byte, headers map[string]string) ([]byte, int, error)
+	Delete(url string, headers map[string]string) ([]byte, int, error)
+}
+
+type Config struct {
+	CACertFile     string
+	KeyFile        string
+	ClientCertFile string
+	RequestTimeout time.Duration
 }
 
 type kmClient struct {
 	client *http.Client
 }
 
-func NewHttpClient(caCertPath, clientCertPath, clientKeyPath string, timeout time.Duration) (HttpClient, error) {
-	cert, err := tls.LoadX509KeyPair(clientCertPath, clientKeyPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed creating x509 key pair: %v", err)
+func NewHttpClient(cfg *Config) (HttpClient, error) {
+	if cfg == nil {
+		cfg = &Config{}
 	}
-	caCert, err := ioutil.ReadFile(caCertPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed opening ca cert `%s`, error: %v", caCert, err)
-	}
-	caCertPool := x509.NewCertPool()
-	caCertPool.AppendCertsFromPEM(caCert)
+	tlsConfig := tls.Config{}
+	if cfg.CACertFile == "" && cfg.KeyFile == "" && cfg.ClientCertFile == "" {
+		tlsConfig.InsecureSkipVerify = true
+	} else {
+		cert, err := tls.LoadX509KeyPair(cfg.ClientCertFile, cfg.KeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed creating x509 key pair: %v", err)
+		}
+		caCert, err := ioutil.ReadFile(cfg.CACertFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed opening ca cert `%s`, error: %v", caCert, err)
+		}
+		caCertPool := x509.NewCertPool()
+		caCertPool.AppendCertsFromPEM(caCert)
 
+		tlsConfig.Certificates = []tls.Certificate{cert}
+		tlsConfig.RootCAs = caCertPool
+	}
 	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			Certificates: []tls.Certificate{cert},
-			RootCAs:      caCertPool,
-		},
+		TLSClientConfig: &tlsConfig,
 	}
 
-	return &kmClient{&http.Client{Transport: transport, Timeout: timeout}}, nil
+	return &kmClient{&http.Client{Transport: transport, Timeout: cfg.RequestTimeout}}, nil
 }
 
 func (c *kmClient) Get(url string, headers map[string]string) ([]byte, int, error) {
@@ -61,6 +78,10 @@ func (c *kmClient) Get(url string, headers map[string]string) ([]byte, int, erro
 
 func (c *kmClient) Post(url string, request []byte, headers map[string]string) ([]byte, int, error) {
 	return c.doRequest(url, "POST", request, headers)
+}
+
+func (c *kmClient) Delete(url string, headers map[string]string) ([]byte, int, error) {
+	return c.doRequest(url, "DELETE", nil, headers)
 }
 
 func (c *kmClient) doRequest(url, method string, body []byte, headers map[string]string) ([]byte, int, error) {
