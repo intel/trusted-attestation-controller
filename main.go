@@ -84,6 +84,7 @@ func main() {
 	registry, err := registryserver.NewPluginRegistry(endpoint)
 	if err != nil {
 		setupLog.Error(err, "plugin registry failure")
+		os.Exit(1)
 	}
 
 	registry.Start()
