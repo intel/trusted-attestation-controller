@@ -104,13 +104,9 @@ spec:
       terminationGracePeriodSeconds: 10
       volumes:
       - name: plugin-socket-dir
-        hostPath:
-          path: /var/lib/trusted-attestation-controller/plugins/kmra
-          type: DirectoryOrCreate
+        emptyDir: {}
       - name: registry-socket-dir
-        hostPath:
-          path: /var/lib/trusted-attestation-controller/registry/
-          type: DirectoryOrCreate
+        emptyDir: {}
       - name: pre-ca-secrets
         secret:
          secretName: kmra-secrets
