@@ -103,6 +103,13 @@ deployment: kustomize
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG} && $(KUSTOMIZE) edit set image kmra-plugin=${IMG}
 	$(KUSTOMIZE) build config/default -o deployment/trusted-attestation-controller.yaml
 
+VERSION=
+release-branch:
+ifeq ("$(VERSION)", "")
+	$(error "Set release version using VERSION make variable. Example: `make release VERSION=0.1.0` ")
+endif
+	./hack/prepare-release-branch.sh --version $(VERSION)
+
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
 controller-gen: ## Download controller-gen locally if necessary.
 	$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.8.0)
