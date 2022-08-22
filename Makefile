@@ -37,10 +37,10 @@ help: ## Display this help.
 
 ##@ Development
 
-manifests: controller-gen ## Generate ClusterRole objects.
+manifests: vendor controller-gen ## Generate ClusterRole objects.
 	$(CONTROLLER_GEN) rbac:roleName=role webhook paths="./..."
 
-generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+generate: vendor controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
  # latest protoc releae as of 03.03.2020
