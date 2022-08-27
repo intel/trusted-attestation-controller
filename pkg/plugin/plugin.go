@@ -15,6 +15,7 @@ package plugin
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -54,6 +55,7 @@ type plugin struct {
 	name       string
 	socketPath string
 	kmStore    KeyManagerPlugin
+	lock       sync.Mutex
 }
 
 func NewPlugin(name, socketPath string, client KeyManagerPlugin) (*plugin, error) {
@@ -78,7 +80,10 @@ func (p *plugin) RegisterService(server *grpc.Server) {
 }
 
 func (p *plugin) ValidateQuote(ctx context.Context, req *pluginapi.ValidateQuoteRequest) (*pluginapi.ValidateQuoteReply, error) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
 	p.log.Info("Validating quote", "req", req)
+
 	res, err := p.kmStore.AttestQuote(ctx, req.SignerName, req.Quote, req.PublicKey)
 	if err != nil {
 		return nil, err
@@ -89,6 +94,8 @@ func (p *plugin) ValidateQuote(ctx context.Context, req *pluginapi.ValidateQuote
 }
 
 func (p *plugin) GetCAKeyAndCertificate(ctx context.Context, req *pluginapi.GetCAKeyAndCertificateRequest) (*pluginapi.GetCAKeyAndCertificateReply, error) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
 	p.log.Info("fetching CA key and certificate", "req", req)
 	key, cert, err := p.kmStore.GetCAKeyCertificate(ctx, req.SignerName, req.Quote, req.PublicKey)
 	if err != nil {
