@@ -46,13 +46,18 @@ type QuoteAttestationReconciler struct {
 	registry *registryserver.PluginRegistry
 	scheme   *runtime.Scheme
 	lock     sync.Mutex
+	// pluginName holds the name of the plugin to use for
+	// key provisioning/quote validation.
+	// The value supposed to come from QuoteAttestation request.
+	pluginName string
 }
 
-func NewQuoteAttestationReconciler(c client.Client, registry *registryserver.PluginRegistry, scheme *runtime.Scheme) *QuoteAttestationReconciler {
+func NewQuoteAttestationReconciler(c client.Client, registry *registryserver.PluginRegistry, scheme *runtime.Scheme, pluginName string) *QuoteAttestationReconciler {
 	return &QuoteAttestationReconciler{
-		Client:   c,
-		registry: registry,
-		scheme:   scheme,
+		Client:     c,
+		registry:   registry,
+		scheme:     scheme,
+		pluginName: pluginName,
 	}
 }
 
@@ -63,11 +68,6 @@ func NewQuoteAttestationReconciler(c client.Client, registry *registryserver.Plu
 
 func (r *QuoteAttestationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	l := log.Log.WithValues("req", req)
-
-	// TODO(avalluri): Hardcoding the key server name to "kmra".
-	// This value supposed to come from QuoteAttestation request.
-	keyServerName := "KMRA"
-
 	l.Info("Reconcile")
 
 	r.lock.Lock()
@@ -107,10 +107,10 @@ func (r *QuoteAttestationReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, nil
 	}
 
-	keyServer := r.registry.GetPlugin(keyServerName)
+	keyServer := r.registry.GetPlugin(r.pluginName)
 	if keyServer == nil || !keyServer.IsReady() {
 		// TODO(avalluri): Update the QA status with the appropriate message
-		l.Info("Plugin is not ready yet, will retry", "keyServer", keyServerName)
+		l.Info("Plugin is not ready yet, will retry", "keyServer", r.pluginName)
 		return ctrl.Result{Requeue: true}, nil
 	}
 
