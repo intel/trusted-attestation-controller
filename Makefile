@@ -1,7 +1,8 @@
-REGISTRY ?= intel
+REGISTRY ?= docker.io
+IMG_NAME ?= intel/trusted-attestation-controller
 IMG_TAG ?= latest
 # Image URL to use all building/pushing image targets
-IMG ?= $(REGISTRY)/trusted-attestation-controller:$(IMG_TAG)
+IMG ?= $(REGISTRY)/$(IMG_NAME):$(IMG_TAG)
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
