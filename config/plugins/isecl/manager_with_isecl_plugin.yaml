@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+  namespace: system
+spec:
+  template:
+    spec:
+      containers:
+      - name: isecl-plugin
+        command:
+        - /isecl-plugin
+        args:
+        - --plugin-name=isecl
+        - --plugin-socket-path=/plugins/isecl.sock
+        - --registry-socket-path=/registration/controller.sock
+        image: isecl-plugin:latest
+        resources:
+          limits:
+            cpu: 500m
+            memory: 100Mi
+          requests:
+            cpu: 100m
+            memory: 20Mi
+        volumeMounts:
+        - name: tac-config
+          mountPath: /etc/tac/
+        - name: kmip-secrets
+          mountPath: /etc/tac/kmip-certs/
+          readOnly: true
+        - name: kbs-secrets
+          mountPath: /etc/tac/kbs-certs/
+          readOnly: true
+        - name: plugin-socket-dir
+          mountPath: /plugins
+        - name: registry-socket-dir
+          mountPath: /registration
