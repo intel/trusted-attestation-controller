@@ -6,7 +6,7 @@
 - [Overview](#overview)
 - [Getting started](#getting-started)
     - [Prerequisites](#prerequisites)
-    - [Installing with source code](#installing-with-source-code)
+    - [Installing from the source code](#installing-from-the-source-code)
     - [Provision TCS issuer root certificate and private key](#provision-tcs-issuer-root-certificate-and-private-key)
 - [Attestation Plugins](#attestation-plugins)
 - [Limitations](#limitations)
@@ -28,12 +28,11 @@ This section covers how to getting started with the Trusted Attestation Controll
 Prerequisites for building and running Trusted Attestation Controller:
 
 - Kubernetes cluster with running [Trusted Certificate Service](https://github.com/intel/trusted-certificate-issuer)
-- [Key Management Reference Application (KMRA) AppHSM Server](https://01.org/key-management-reference-application-kmra)
 - git, or similar tool, to obtain the source code
 - Docker, or similar tool, to build container images
 - Container registry ([local](https://docs.docker.com/registry/deploying/) or remote)
 
-### Installing with source code
+### Installing from the source code
 
 This section covers how to obtain the source code, build and install it.
 
@@ -63,23 +62,24 @@ kubectl apply -f https://raw.githubusercontent.com/intel/trusted-certificate-iss
 
 4. Setup a key server
 
-[Download the KMRA v2.0](https://01.org/key-management-reference-application-kmra/downloads/key-management-reference-application-kmra-v2.0) source code and refer to its instructions
-for setting up the key server on a host that is securely accessible from your Kubernetes cluster.
+One has to deploy a key management server in a secure environment, outside the
+cluster where the TCS is running. The key server shall host the privatekey
+and signing certificate of a `TCSIssuer` and provides an API to fetch them
+securely to the clients.
 
-4. Configure the key server url and credentials
+At the moment `trusted-attestation-controller (TCA)` supports two such key servers
+`KMRA` and `KMIP-compliant` key server using Intel Security Libraries (`iSecL-DC`).
+One can extend this by writing a plugin specific to their server. Refer to TAC
+plugin api for further details.
+
+You can choose either one of the key servers and update the plugin configuration.
+Refer to plugin specific documentation for the details.
+
+5. Deploy the controller with the plugin
 
 ```sh
-export SERVER_URL=<<https://server-address:port>>
-sed -ie "s;^KEY_SERVER=\(.*\);$SERVER_URL;g" ./config/manager/.key-server.conf
-sed -e "s;^\(ca.crt=\).*;\1$(base64 -w 0 /ca/certificate/file);g" \
-     -e "s;^\(client.crt=\).*;\1$(base64 -w 0 /client/certificate/file);g" \
-     -e "s;^\(client.key=\).*;\1$(base64 -w 0 /client/privatekey/file);g" ./config/manager/.ca.secrets
-```
-
-5. Deploy the controller
-
-```sh
-make deploy
+export PLUGIN="<<kmip/isecl>>" # choose one of 'kmra' or 'isecl'
+make deploy-$PLUGIN
 ```
 
 ### Provision TCS issuer root certificate and private key
@@ -110,11 +110,12 @@ NAME                            AGE   READY   REASON      MESSAGE
 tcsissuer.tcs.intel.com/my-ca   10s   False   Reconcile   Signer is not ready
 ```
 
-And, the Trusted Attestation Controller reconciles this request and forwards the attestation request to the
-configured key server plugin, in this case the KMRA. The server validates the provided SGX quote. Only
-if the validation success, the controller requests the server to fetch the encrypted CA private key 
-and certificate and it updates the `QuoteAttestation` object status with the results. Then the TCS
-enclave decrypts the key, and TCS deletes the `QuoteAttestation` object silently.
+And, the Trusted Attestation Controller reconciles this request and forwards the
+attestation request to the configured key server plugin. The server validates
+the provided SGX quote. Only if the validation success, the controller requests
+the server to fetch the encrypted CA private key and certificate and it updates
+the `QuoteAttestation` object status with the results. Then the TCS enclave
+decrypts the key, and TCS deletes the `QuoteAttestation` object silently.
 
 ```sh
 kubectl get quoteattestation,tcsissuer -n sandbox
