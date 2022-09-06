@@ -52,7 +52,7 @@ trap Cleanup EXIT
 SHORT_VERSION=$(echo $VERSION | sed -e 's/\([0-9]*\.[0-9]*\)\..*/\1/')
 echo "Using release VERSION=$VERSION"
 
-release_branch="release-v$SHORT_VERSION"
+release_branch="release-$SHORT_VERSION"
 
 cd "$REPO_ROOT"
 git fetch origin
@@ -60,10 +60,11 @@ git checkout -b $release_branch $(git show --no-patch --oneline origin/main | cu
 make generate deployment REGISTRY="intel" IMG_TAG=$VERSION
 git checkout ./config/manager/kustomization.yaml
 git add ./deployment && git commit -m "Release v$VERSION"
-# Unset release_branch so that Cleanup does not delete the branch.
-release_branch=""
 
 echo ========================
 echo "Created new release branch $release_branch. Review and run 'git push origin $release_branch'."
 echo =======================
+
+# Unset release_branch so that Cleanup does not delete the branch.
+release_branch=""
 
