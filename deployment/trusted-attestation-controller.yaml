@@ -231,7 +231,7 @@ spec:
         - --registration-path=/registration/controller.sock
         command:
         - /manager
-        image: intel/trusted-attestation-controller:latest
+        image: docker.io/intel/trusted-attestation-controller:0.2.1
         imagePullPolicy: Always
         livenessProbe:
           httpGet:
@@ -269,7 +269,7 @@ spec:
         envFrom:
         - configMapRef:
             name: tac-key-server-config
-        image: intel/trusted-attestation-controller:latest
+        image: docker.io/intel/trusted-attestation-controller:0.2.1
         name: kmra-plugin
         resources:
           limits:
