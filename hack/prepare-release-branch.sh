@@ -57,7 +57,7 @@ release_branch="release-$SHORT_VERSION"
 cd "$REPO_ROOT"
 git fetch origin
 git checkout -b $release_branch $(git show --no-patch --oneline origin/main | cut -f1 -d ' ')
-make generate deployment REGISTRY="intel" IMG_TAG=$VERSION
+make generate deployment REGISTRY="docker.io" IMG_TAG=$VERSION
 git checkout ./config/manager/kustomization.yaml
 git add ./deployment && git commit -m "Release v$VERSION"
 
