@@ -17,7 +17,7 @@ RUN mkdir -p /usr/local/share/package-licenses \
   && cp /usr/local/go/LICENSE /usr/local/share/package-licenses/go.LICENSE \
   && cp LICENSE /usr/local/share/package-licenses/trusted-attestation-controller.LICENSE
 
-FROM gcr.io/distroless/base-debian11
+FROM gcr.io/distroless/base
 
 WORKDIR /
 COPY --from=builder /manager .
