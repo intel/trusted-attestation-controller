@@ -70,7 +70,7 @@ for setting up the key server on a host that is securely accessible from your Ku
 
 ```sh
 export SERVER_URL=<<https://server-address:port>>
-sed -ie "s;^KEY_SERVER=\(.*\);$SERVER_URL;g" ./config/manager/.kmra-server.conf
+sed -ie "s;^KEY_SERVER=\(.*\);$SERVER_URL;g" ./config/manager/.key-server.conf
 sed -e "s;^\(ca.crt=\).*;\1$(base64 -w 0 /ca/certificate/file);g" \
      -e "s;^\(client.crt=\).*;\1$(base64 -w 0 /client/certificate/file);g" \
      -e "s;^\(client.key=\).*;\1$(base64 -w 0 /client/privatekey/file);g" ./config/manager/.ca.secrets
