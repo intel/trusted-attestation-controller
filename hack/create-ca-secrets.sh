@@ -5,7 +5,7 @@ usage()
   echo "Usage:
     $0 [-h|--help]          display this help and exit
        --ca-cert <file>     file containing the PEM encoded CA certificate
-       --cient-key <file>   file containing the #PKCS1 encoded private key
+       --client-key <file>   file containing the #PKCS1 encoded private key
        --client-cert <file> file containing the PEM encoded client certificate
                             corresponding to the clinet private key
 "
