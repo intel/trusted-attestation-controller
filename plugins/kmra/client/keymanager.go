@@ -64,6 +64,7 @@ type rsaKeyData struct {
 type sgxObject struct {
 	RsaPublicKey *rsaKeyData `json:"RsaPublicKey"`
 	SgxQuote     string      `json:"SgxQuote"`
+	Nonce        string      `json:"SgxQuoteNonce,omitempty"`
 }
 
 type hsmObject struct {
@@ -160,21 +161,21 @@ func (km *KmStore) initialize() error {
 	return nil
 }
 
-func (km *KmStore) GetCAKeyCertificate(ctx context.Context, signerName string, quote []byte, publicKey []byte) ([]byte, []byte, error) {
+func (km *KmStore) GetCAKeyCertificate(ctx context.Context, signerName string, quote []byte, publicKey []byte, nonce []byte) ([]byte, []byte, error) {
 	if km == nil {
 		return nil, nil, errors.New("kmStore is nil")
 	}
-	return km.keysExport(signerName, quote, publicKey)
+	return km.keysExport(signerName, quote, publicKey, nonce)
 }
 
 // AttestQuote uses post request to attest the quote match the key for a given signer
-func (km *KmStore) AttestQuote(ctx context.Context, signerName string, quote []byte, publicKey []byte) (bool, error) {
+func (km *KmStore) AttestQuote(ctx context.Context, signerName string, quote []byte, publicKey []byte, nonce []byte) (bool, error) {
 	if km.client == nil {
 		return false, errors.New("http client is not initialized")
 	}
 	attestationUrl := fmt.Sprintf("https://%s/sgx/attest", km.config.KMHost)
 
-	requestBody, err := buildKeysRequest(signerName, quote, publicKey)
+	requestBody, err := buildKeysRequest(signerName, quote, publicKey, nonce)
 	if err != nil {
 		return false, fmt.Errorf("failed to create attestation request: %v", err)
 	}
@@ -197,13 +198,13 @@ func (km *KmStore) AttestQuote(ctx context.Context, signerName string, quote []b
 }
 
 // keysExport uses post request to get the wrapped keys and certificate from server
-func (km *KmStore) keysExport(signerName string, quote []byte, publicKey []byte) ([]byte, []byte, error) {
+func (km *KmStore) keysExport(signerName string, quote []byte, publicKey []byte, nonce []byte) ([]byte, []byte, error) {
 	if km.client == nil {
 		return nil, nil, errors.New("http client is not initialized")
 	}
 	keysServiceUrl := fmt.Sprintf("https://%s/sgx/keys/export", km.config.KMHost)
 
-	requestBody, err := buildKeysRequest(signerName, quote, publicKey)
+	requestBody, err := buildKeysRequest(signerName, quote, publicKey, nonce)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create keys request: %v", err)
 	}
@@ -280,7 +281,7 @@ func validateMinApiVersion(version string) error {
 
 // buildKeysRequest parses the provided key and creates request in json format
 // corresponding to AppHSM REST API.
-func buildKeysRequest(signerName string, quote []byte, publicKey []byte) ([]byte, error) {
+func buildKeysRequest(signerName string, quote []byte, publicKey []byte, nonce []byte) ([]byte, error) {
 	// Get the exponent and modulus from public key
 	decodedKey, _ := pem.Decode(publicKey)
 	if decodedKey == nil {
@@ -306,6 +307,7 @@ func buildKeysRequest(signerName string, quote []byte, publicKey []byte) ([]byte
 	sgxData := sgxObject{
 		RsaPublicKey: &keyData,
 		SgxQuote:     string(quote),
+		Nonce:        string(nonce),
 	}
 	hsmData := hsmObject{
 		UniqueID: signerName,

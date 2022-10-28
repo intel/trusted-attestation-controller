@@ -34,7 +34,7 @@ type KeyManagerPlugin interface {
 	// Returns true if given quote is valid.
 	// Returns false if verification failed.
 	// In case of other problems, appropriate error gets returned.
-	AttestQuote(ctx context.Context, signerName string, quote []byte, publicKey []byte) (bool, error)
+	AttestQuote(ctx context.Context, signerName string, quote []byte, publicKey []byte, nonce []byte) (bool, error)
 
 	// GetCAKeyCertificate retrieves the stored CA key and certificate at the key-manager
 	// for given signer signerName. Both quote and publicKey are base64 encoded.
@@ -46,7 +46,7 @@ type KeyManagerPlugin interface {
 	// SWK and PWK are concatenated and returned as single base64 encoded block. Certificate
 	// is base64 encoded.
 	// Otherwise, appropriate error gets returned.
-	GetCAKeyCertificate(ctx context.Context, signerName string, quote []byte, publicKey []byte) ([]byte, []byte, error)
+	GetCAKeyCertificate(ctx context.Context, signerName string, quote []byte, publicKey []byte, nonce []byte) ([]byte, []byte, error)
 }
 
 type plugin struct {
@@ -84,7 +84,7 @@ func (p *plugin) ValidateQuote(ctx context.Context, req *pluginapi.ValidateQuote
 	defer p.lock.Unlock()
 	p.log.Info("Validating quote", "req", req)
 
-	res, err := p.kmStore.AttestQuote(ctx, req.SignerName, req.Quote, req.PublicKey)
+	res, err := p.kmStore.AttestQuote(ctx, req.SignerName, req.Quote, req.PublicKey, req.Nonce)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +97,7 @@ func (p *plugin) GetCAKeyAndCertificate(ctx context.Context, req *pluginapi.GetC
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	p.log.Info("fetching CA key and certificate", "req", req)
-	key, cert, err := p.kmStore.GetCAKeyCertificate(ctx, req.SignerName, req.Quote, req.PublicKey)
+	key, cert, err := p.kmStore.GetCAKeyCertificate(ctx, req.SignerName, req.Quote, req.PublicKey, req.Nonce)
 	if err != nil {
 		return nil, err
 	}

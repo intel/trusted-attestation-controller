@@ -52,7 +52,7 @@ func (ks *keyServer) IsReady() bool {
 	return ks != nil && ks.cc != nil
 }
 
-func (ks *keyServer) AttestQuote(ctx context.Context, signerName string, quote []byte, publicKey []byte) (bool, error) {
+func (ks *keyServer) AttestQuote(ctx context.Context, signerName string, quote []byte, publicKey []byte, nonce []byte) (bool, error) {
 	if !ks.IsReady() {
 		return false, fmt.Errorf("%s: server is not ready", ks.name)
 	}
@@ -62,6 +62,7 @@ func (ks *keyServer) AttestQuote(ctx context.Context, signerName string, quote [
 		SignerName: signerName,
 		Quote:      quote,
 		PublicKey:  publicKey,
+		Nonce:      nonce,
 	})
 	if err != nil {
 		return false, err
@@ -70,7 +71,7 @@ func (ks *keyServer) AttestQuote(ctx context.Context, signerName string, quote [
 	return res.Result, nil
 }
 
-func (ks *keyServer) GetCAKeyCertificate(ctx context.Context, signerName string, quote []byte, publicKey []byte) ([]byte, []byte, error) {
+func (ks *keyServer) GetCAKeyCertificate(ctx context.Context, signerName string, quote []byte, publicKey []byte, nonce []byte) ([]byte, []byte, error) {
 	if !ks.IsReady() {
 		return nil, nil, fmt.Errorf("%s: server is not ready", ks.name)
 	}
@@ -80,6 +81,7 @@ func (ks *keyServer) GetCAKeyCertificate(ctx context.Context, signerName string,
 		SignerName: signerName,
 		Quote:      quote,
 		PublicKey:  publicKey,
+		Nonce:      nonce,
 	})
 	if err != nil {
 		return nil, nil, err

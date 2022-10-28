@@ -33,7 +33,7 @@ import (
 
 	"github.com/intel/trusted-attestation-controller/controllers"
 	"github.com/intel/trusted-attestation-controller/pkg/registryserver"
-	tcsapi "github.com/intel/trusted-certificate-issuer/api/v1alpha1"
+	tcsapi "github.com/intel/trusted-certificate-issuer/api/v1alpha2"
 	//+kubebuilder:scaffold:imports
 )
 

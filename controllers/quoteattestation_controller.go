@@ -35,8 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/intel/trusted-attestation-controller/pkg/registryserver"
-	"github.com/intel/trusted-certificate-issuer/api/v1alpha1"
-	tcsapi "github.com/intel/trusted-certificate-issuer/api/v1alpha1"
+	tcsapi "github.com/intel/trusted-certificate-issuer/api/v1alpha2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -94,10 +93,10 @@ func (r *QuoteAttestationReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		}
 	}
 
-	cond := qa.Status.GetCondition(v1alpha1.ConditionReady)
+	cond := qa.Status.GetCondition(tcsapi.ConditionReady)
 	if cond == nil {
 		l.Info("First seen initiating the status.")
-		qa.Status.SetCondition(v1alpha1.ConditionReady, v1.ConditionUnknown, v1alpha1.ReasonControllerReconcile, "First seen")
+		qa.Status.SetCondition(tcsapi.ConditionReady, v1.ConditionUnknown, tcsapi.ReasonControllerReconcile, "First seen")
 		patchStatus()
 		return ctrl.Result{}, nil
 	}
@@ -116,41 +115,41 @@ func (r *QuoteAttestationReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	defer patchStatus()
 
-	if qa.Spec.Type == v1alpha1.RequestTypeQuoteAttestation {
-		if ok, err := keyServer.AttestQuote(ctx, qa.Spec.SignerName, qa.Spec.Quote, qa.Spec.PublicKey); err != nil {
+	if qa.Spec.Type == tcsapi.RequestTypeQuoteAttestation {
+		if ok, err := keyServer.AttestQuote(ctx, qa.Spec.SignerName, qa.Spec.Quote, qa.Spec.PublicKey, qa.Spec.Nonce); err != nil {
 			l.Info("Error occurred while attesting quote", "error", err)
-			qa.Status.SetCondition(v1alpha1.ConditionReady, v1.ConditionFalse, v1alpha1.ReasonControllerReconcile, "Failed to attest: "+err.Error())
+			qa.Status.SetCondition(tcsapi.ConditionReady, v1.ConditionFalse, tcsapi.ReasonControllerReconcile, "Failed to attest: "+err.Error())
 		} else if !ok {
 			l.Info("Got quote verification failure")
-			qa.Status.SetCondition(v1alpha1.ConditionReady, v1.ConditionFalse, v1alpha1.ReasonControllerReconcile, "Provided quote was invalid.")
+			qa.Status.SetCondition(tcsapi.ConditionReady, v1.ConditionFalse, tcsapi.ReasonControllerReconcile, "Provided quote was invalid.")
 		} else {
 			l.Info("Got quote verification success")
-			qa.Status.SetCondition(v1alpha1.ConditionReady, v1.ConditionTrue, v1alpha1.ReasonControllerReconcile, "Quote verified successfully.")
+			qa.Status.SetCondition(tcsapi.ConditionReady, v1.ConditionTrue, tcsapi.ReasonControllerReconcile, "Quote verified successfully.")
 		}
-	} else if qa.Spec.Type == v1alpha1.RequestTypeKeyProvisioning {
+	} else if qa.Spec.Type == tcsapi.RequestTypeKeyProvisioning {
 		if qa.Spec.SecretName == "" {
-			qa.Status.SetCondition(v1alpha1.ConditionReady, v1.ConditionFalse, v1alpha1.ReasonControllerReconcile, "Invalid request: missing secret name")
+			qa.Status.SetCondition(tcsapi.ConditionReady, v1.ConditionFalse, tcsapi.ReasonControllerReconcile, "Invalid request: missing secret name")
 			return ctrl.Result{}, nil
 		}
-		wrappedData, cert, err := keyServer.GetCAKeyCertificate(ctx, qa.Spec.SignerName, qa.Spec.Quote, qa.Spec.PublicKey)
+		wrappedData, cert, err := keyServer.GetCAKeyCertificate(ctx, qa.Spec.SignerName, qa.Spec.Quote, qa.Spec.PublicKey, qa.Spec.Nonce)
 		if err != nil {
 			err := fmt.Errorf("error from key server: %v", err)
 			l.Info("Failed to fetch CA secrets", "signerName", qa.Spec.SignerName, "error", err)
-			qa.Status.SetCondition(v1alpha1.ConditionReady, v1.ConditionFalse, v1alpha1.ReasonControllerReconcile, err.Error())
+			qa.Status.SetCondition(tcsapi.ConditionReady, v1.ConditionFalse, tcsapi.ReasonControllerReconcile, err.Error())
 			return ctrl.Result{Requeue: true}, nil
 		}
 
 		log.Log.Info("Preparing secret object", "signer", qa.Spec.SignerName, "secret", qa.Spec.SecretName)
 		if err := createSecret(ctx, r.Client, wrappedData, cert, qa.Spec.SecretName, qa); err != nil {
 			l.Info("Failed to create CA secret", "error", err)
-			qa.Status.SetCondition(v1alpha1.ConditionReady, v1.ConditionFalse, v1alpha1.ReasonControllerReconcile, err.Error())
+			qa.Status.SetCondition(tcsapi.ConditionReady, v1.ConditionFalse, tcsapi.ReasonControllerReconcile, err.Error())
 			return ctrl.Result{}, nil
 		}
 
 		l.Info("Key wrapping SUCCESS")
-		qa.Status.SetCondition(v1alpha1.ConditionReady, v1.ConditionTrue, v1alpha1.ReasonControllerReconcile, "CA secrets are prepared successfully.")
+		qa.Status.SetCondition(tcsapi.ConditionReady, v1.ConditionTrue, tcsapi.ReasonControllerReconcile, "CA secrets are prepared successfully.")
 	} else {
-		qa.Status.SetCondition(v1alpha1.ConditionReady, v1.ConditionFalse, v1alpha1.ReasonControllerReconcile, "Unsupported request type")
+		qa.Status.SetCondition(tcsapi.ConditionReady, v1.ConditionFalse, tcsapi.ReasonControllerReconcile, "Unsupported request type")
 	}
 
 	return ctrl.Result{}, nil
@@ -159,8 +158,8 @@ func (r *QuoteAttestationReconciler) Reconcile(ctx context.Context, req ctrl.Req
 // SetupWithManager sets up the controller with the Manager.
 func (r *QuoteAttestationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&v1alpha1.QuoteAttestation{}).
-		Watches(&source.Kind{Type: &v1alpha1.QuoteAttestation{}}, &handler.EnqueueRequestForObject{}).
+		For(&tcsapi.QuoteAttestation{}).
+		Watches(&source.Kind{Type: &tcsapi.QuoteAttestation{}}, &handler.EnqueueRequestForObject{}).
 		WithEventFilter(predicate.Funcs{
 			DeleteFunc: func(de event.DeleteEvent) bool {
 				return false
@@ -188,7 +187,7 @@ func secretNameForSigner(signer string) string {
 	return slices[0]
 }
 
-func createSecret(ctx context.Context, c client.Client, wrappedData, cert []byte, name string, owner *v1alpha1.QuoteAttestation) error {
+func createSecret(ctx context.Context, c client.Client, wrappedData, cert []byte, name string, owner *tcsapi.QuoteAttestation) error {
 	secret := &v1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
