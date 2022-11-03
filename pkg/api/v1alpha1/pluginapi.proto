@@ -52,6 +52,8 @@ message ValidateQuoteRequest {
     bytes publicKey = 2;
     // base64 encoded SGX Quote
     bytes quote = 3;
+    // base64 encoded nonce used for generating the SGX quote
+    bytes nonce = 4;
 }
 
 message ValidateQuoteReply {
@@ -67,6 +69,8 @@ message GetCAKeyAndCertificateRequest {
     bytes publicKey = 2;
     // base64 encoded SGX Quote
     bytes quote = 3;
+    // base64 encoded nonce used for generating the SGX quote
+    bytes nonce = 4;
 }
 
 message GetCAKeyAndCertificateReply {

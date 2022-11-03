@@ -20,36 +20,17 @@ import (
 	"fmt"
 
 	pluginapi "github.com/intel/trusted-attestation-controller/pkg/api/v1alpha1"
+	"github.com/intel/trusted-attestation-controller/pkg/plugin"
 	"google.golang.org/grpc"
 )
 
 type KeyServer interface {
+	plugin.KeyManagerPlugin
 	// GetName returns the name of the key server
 	GetName() string
 
 	// IsReady return if the connection the key server is ready
 	IsReady() bool
-
-	// AttestQuote attests the given quote is valid. Both quote and
-	// publicKey are base64 encoded. The publickey hash part of the quote
-	// must match with the given publicKey.
-	//
-	// Returns true if given quote is valid.
-	// Returns false if verification failed.
-	// In case of other problems, appropriate error gets returned.
-	AttestQuote(ctx context.Context, signerName string, quote []byte, publicKey []byte) (bool, error)
-
-	// GetCAKeyCertificate retrieves the stored CA key and certificate at the key-manager
-	// for given signer signerName. Both quote and publicKey are base64 encoded.
-	// First the given SGX quote is validated is valid by using quote validation library.
-	// The publickey hash part of the quote must match with the given publicKey.
-	//
-	// On success, returns the key and certificate. The CA private key(PWK) is wrapped
-	// with a symmetric key(SWK) that was wrapped with the given publicKey. Both the
-	// SWK and PWK are concatenated and returned as single base64 encoded block. Certificate
-	// is base64 encoded.
-	// Otherwise, appropriate error gets returned.
-	GetCAKeyCertificate(ctx context.Context, signerName string, quote []byte, publicKey []byte) ([]byte, []byte, error)
 }
 
 type keyServer struct {
@@ -57,6 +38,8 @@ type keyServer struct {
 	socketPath string
 	cc         *grpc.ClientConn
 }
+
+var _ KeyServer = &keyServer{}
 
 func (ks *keyServer) GetName() string {
 	if ks == nil {
@@ -69,7 +52,7 @@ func (ks *keyServer) IsReady() bool {
 	return ks != nil && ks.cc != nil
 }
 
-func (ks *keyServer) AttestQuote(ctx context.Context, signerName string, quote []byte, publicKey []byte) (bool, error) {
+func (ks *keyServer) AttestQuote(ctx context.Context, signerName string, quote []byte, publicKey []byte, nonce []byte) (bool, error) {
 	if !ks.IsReady() {
 		return false, fmt.Errorf("%s: server is not ready", ks.name)
 	}
@@ -79,6 +62,7 @@ func (ks *keyServer) AttestQuote(ctx context.Context, signerName string, quote [
 		SignerName: signerName,
 		Quote:      quote,
 		PublicKey:  publicKey,
+		Nonce:      nonce,
 	})
 	if err != nil {
 		return false, err
@@ -87,7 +71,7 @@ func (ks *keyServer) AttestQuote(ctx context.Context, signerName string, quote [
 	return res.Result, nil
 }
 
-func (ks *keyServer) GetCAKeyCertificate(ctx context.Context, signerName string, quote []byte, publicKey []byte) ([]byte, []byte, error) {
+func (ks *keyServer) GetCAKeyCertificate(ctx context.Context, signerName string, quote []byte, publicKey []byte, nonce []byte) ([]byte, []byte, error) {
 	if !ks.IsReady() {
 		return nil, nil, fmt.Errorf("%s: server is not ready", ks.name)
 	}
@@ -97,6 +81,7 @@ func (ks *keyServer) GetCAKeyCertificate(ctx context.Context, signerName string,
 		SignerName: signerName,
 		Quote:      quote,
 		PublicKey:  publicKey,
+		Nonce:      nonce,
 	})
 	if err != nil {
 		return nil, nil, err

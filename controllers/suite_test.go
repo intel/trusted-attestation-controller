@@ -29,7 +29,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	sgxapi "github.com/intel/trusted-certificate-issuer/api/v1alpha1"
+	sgxapi "github.com/intel/trusted-certificate-issuer/api/v1alpha2"
 	//+kubebuilder:scaffold:imports
 )
 
