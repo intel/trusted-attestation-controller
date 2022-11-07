@@ -29,14 +29,10 @@ spec:
       initContainers:
       - name: decode-secrets
         image: busybox
-        command: ['sh', '-c', 'set -x; for f in /tmp/certs/*; do cat $f | base64 -d > /certs/$(basename $f); done ; chown -R 5000:5000 /registration /kmra /certs']
+        command: ['sh', '-c', 'set -x; chown -R 5000:5000 /registration /plugins']
         volumeMounts:
-        - name: ca-secrets
-          mountPath: /certs/
-        - name: pre-ca-secrets
-          mountPath: /tmp/certs
         - name: plugin-socket-dir
-          mountPath: /kmra
+          mountPath: /plugins
         - name: registry-socket-dir
           mountPath: /registration
       containers:
@@ -71,33 +67,7 @@ spec:
             memory: 20Mi
         volumeMounts:
         - name: plugin-socket-dir
-          mountPath: /kmra
-        - name: registry-socket-dir
-          mountPath: /registration
-      - name: kmra-plugin
-        command:
-        - /kmra-plugin
-        args:
-        - --plugin-name=KMRA
-        - --plugin-socket-path=/kmra/kmra.sock
-        - --registry-socket-path=/registration/controller.sock
-        image: kmra-plugin:latest
-        resources:
-          limits:
-            cpu: 500m
-            memory: 100Mi
-          requests:
-            cpu: 100m
-            memory: 20Mi
-        envFrom:
-        - configMapRef:
-            name: key-server-config
-        volumeMounts:
-        - name: ca-secrets
-          mountPath: /certs/
-          readOnly: true
-        - name: plugin-socket-dir
-          mountPath: /kmra
+          mountPath: /plugins
         - name: registry-socket-dir
           mountPath: /registration
       serviceAccountName: svcact
@@ -106,9 +76,4 @@ spec:
       - name: plugin-socket-dir
         emptyDir: {}
       - name: registry-socket-dir
-        emptyDir: {}
-      - name: pre-ca-secrets
-        secret:
-         secretName: kmra-secrets
-      - name: ca-secrets
         emptyDir: {}

@@ -1,7 +1,8 @@
-# km-store
+# KMRA-plugin
 
-kmStore provides implementation for KeyManager interface.
-It requires running host with appHSM server from KMRA project:
+Intel(R) KMRA (Key Management Reference Application) provides
+reference implementation for a KeyManager interface.
+It requires running host with `appHSM` server from KMRA project:
 https://01.org/key-management-reference-application-kmra
 The server provides REST API management interface secured
 with mutual TLS.
@@ -32,3 +33,36 @@ kmra := kmstore.NewKmStore(config)
 
 NOTE: The minimum required version of appHSM REST API is 0.2.
 It is verified during initialization of kmStore instance.
+
+# Setting up the key server
+
+[Download the KMRA v2.0](https://01.org/key-management-reference-application-kmra/downloads/key-management-reference-application-kmra-v2.0) source code and refer to its instructions
+for setting up the key server on a host that is securely accessible from your Kubernetes cluster.
+
+# Plugin configuration
+
+While deploying the `trusted-attestation-controller` with KMRA plugin,
+update the configuration with the AppHSM server URL and the TLS
+certificates information:
+
+If your are deploying from source:
+
+```sh
+export SERVER_URL=<<https://server-address:port>>
+sed -ie "s;^KEY_SERVER=\(.*\);$SERVER_URL;g" ./config/plugins/kmra/.key-server.conf
+sed -e "s;^\(ca.crt=\).*;\1$(base64 -w 0 /ca/certificate/file);g" \
+     -e "s;^\(client.crt=\).*;\1$(base64 -w 0 /client/certificate/file);g" \
+     -e "s;^\(client.key=\).*;\1$(base64 -w 0 /client/privatekey/file);g" ./config/manager/.ca.secrets
+```
+
+Incase your are deploying with the pre-generated deployment:
+
+```sh
+curl https://raw.githubusercontent.com/intel/trusted-attestation-controller/main/deployment/tac-with-kmra.yaml -o tac.yaml
+
+# Update the server URL and TLS certificates
+sed -i 's/\(KEY_SERVER: \).*/\1 "'$SERVER_URL'")' tac.yaml
+sed -e "s;^\(ca.crt: \).*;\1$(base64 -w 0 /ca/certificate/file);g" \
+     -e "s;^\(client.crt: \).*;\1$(base64 -w 0 /client/certificate/file);g" \
+     -e "s;^\(client.key: \).*;\1$(base64 -w 0 /client/privatekey/file);g" tac.yaml
+```

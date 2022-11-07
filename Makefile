@@ -3,6 +3,8 @@ IMG_NAME ?= intel/trusted-attestation-controller
 IMG_TAG ?= latest
 # Image URL to use all building/pushing image targets
 IMG ?= $(REGISTRY)/$(IMG_NAME):$(IMG_TAG)
+# List of in-tree plugins
+PLUGINS ?= kmra isecl null
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -17,7 +19,7 @@ endif
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
-all: build build-plugins
+all: build $(PLUGINS)
 
 ##@ General
 
@@ -75,11 +77,9 @@ test: manifests generate fmt vet ## Run tests.
 build: vendor generate fmt vet ## Build manager binary.
 	go build -o bin/manager main.go
 
-build-plugins: generate-proto fmt vet ## Build kmra-plugin binary.
-	go build -o bin/kmra-plugin ./plugins/kmra/main.go
+$(PLUGINS): generate-proto fmt vet ## Build plugin binaries.
+	go build -o bin/$@-plugin ./plugins/$@/main.go
 
-run: manifests generate fmt vet ## Run a controller from your host.
-	go run ./main.go
 
 # additional arguments to pass to 'docker build'
 DOCKER_BUILD_ARGS ?=
@@ -91,17 +91,31 @@ docker-push: ## Push docker image with the manager.
 
 ##@ Deployment
 
-deploy:  kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG} && $(KUSTOMIZE) edit set image kmra-plugin=${IMG}
-	$(KUSTOMIZE) build config/default | kubectl apply -f -
+## Deploy controller to the K8s cluster specified in ~/.kube/config.
+## If provided OUTFILE instead it writes the deployment to the given
+## file.
+deploy-%: kustomize ./config/plugins/%
+	$(eval TMP := $(shell mktemp -d -p ./config/))
+	echo -e "bases:\n- ../plugins/$*" > $(TMP)/kustomization.yaml
+	@cd $(TMP) && $(KUSTOMIZE) edit set image controller=${IMG} $*-plugin=${IMG}
+ifneq ("$(OUTFILE)", "")
+	$(KUSTOMIZE) build $(TMP) -o $(OUTFILE)
+else
+	$(KUSTOMIZE) build $(TMP) | kubectl apply -f -
+endif
+	rm -rf $(TMP)
 
-undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build config/default | kubectl delete -f -
+undeploy-%: #ensure-plugin ## Undeploy controller from the K8s cluster specified in ~/.kube/config.
+	$(KUSTOMIZE) build config/plugins/$* | kubectl delete -f -
 
-deployment: kustomize
+deploy-manifest-%: kustomize
+	@echo "Generating manifest for plugin: $*"
 	mkdir -p deployment
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG} && $(KUSTOMIZE) edit set image kmra-plugin=${IMG}
-	$(KUSTOMIZE) build config/default -o deployment/trusted-attestation-controller.yaml
+	$(MAKE) deploy-$* OUTFILE=deployment/tac-with-$*.yaml
+
+deploy-manifests: $(patsubst %, deploy-manifest-%, $(PLUGINS))
+	@echo "Complete!"
+
 
 VERSION=
 release-branch:
@@ -131,3 +145,5 @@ GOBIN=$(PROJECT_DIR)/bin go install $(2) ;\
 rm -rf $$TMP_DIR ;\
 }
 endef
+
+.PHONY : .deploy

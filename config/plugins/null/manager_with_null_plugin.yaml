@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+  namespace: system
+spec:
+  template:
+    spec:
+      containers:
+      - name: null-plugin
+        command:
+        - /null-plugin
+        args:
+        - --plugin-name=null
+        - --plugin-socket-path=/plugins/null.sock
+        - --registry-socket-path=/registration/controller.sock
+        image: null-plugin:latest
+        resources:
+          limits:
+            cpu: 500m
+            memory: 100Mi
+          requests:
+            cpu: 100m
+            memory: 20Mi
+        volumeMounts:
+        - name: plugin-socket-dir
+          mountPath: /plugins
+        - name: registry-socket-dir
+          mountPath: /registration

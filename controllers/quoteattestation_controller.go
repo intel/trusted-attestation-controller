@@ -173,10 +173,13 @@ func (r *QuoteAttestationReconciler) CreateHandler(e event.CreateEvent, q workqu
 
 // secretNameForSigner returns the valid Kubernetes secret
 // name for given signer:
-//    <domain>[/signer-name] => tac-[signer-name.]domain
+//
+//	<domain>[/signer-name] => tac-[signer-name.]domain
+//
 // Ex:
-//   intel.com/sgx => tac-sgx.intel.com
-//   clusterissuer.tcs.intel.com/test-ca => tac-test-ca.clusterissur.tcs.intel.com
+//
+//	intel.com/sgx => tac-sgx.intel.com
+//	clusterissuer.tcs.intel.com/test-ca => tac-test-ca.clusterissur.tcs.intel.com
 func secretNameForSigner(signer string) string {
 	secretName := "tac-" + signer
 	slices := strings.SplitN(secretName, "/", 2)

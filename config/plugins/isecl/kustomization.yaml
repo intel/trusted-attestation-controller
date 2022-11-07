@@ -1,0 +1,49 @@
+
+resources:
+- ../../default
+- kbs-secrets.yaml
+- kmip-secrets.yaml
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+# Patch 'controller' container arguments with
+# the --plugin-name=isecl. This could be removed
+# once we support passing plugin name/key provider
+# in the QuoteAttestation API.
+patches:
+- patch: |-
+    - op: add
+      path: /spec/template/spec/containers/1/args/-
+      value: --plugin-name=isecl
+    - op: add
+      path: /spec/template/spec/volumes/-
+      value:
+        name: tac-config
+        configMap:
+          name: tac-config
+    - op: add
+      path: /spec/template/spec/volumes/-
+      value:
+        name: kmip-secrets
+        secret:
+          secretName: kmip-secrets
+    - op: add
+      path: /spec/template/spec/volumes/-
+      value:
+        name: kbs-secrets
+        secret:
+          secretName: kbs-secrets
+  target:
+    kind: Deployment
+
+patchesStrategicMerge:
+- manager_with_isecl_plugin.yaml
+
+configMapGenerator:
+- files:
+  - config.yaml
+  name: tac-config
+  namespace: attestation-controller
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization

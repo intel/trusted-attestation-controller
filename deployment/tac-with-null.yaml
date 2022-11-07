@@ -1,0 +1,283 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    control-plane: controller-manager
+  name: attestation-controller
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tac-svcact
+  namespace: attestation-controller
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tac-leader-election-role
+  namespace: attestation-controller
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: tac-metrics-reader
+rules:
+- nonResourceURLs:
+  - /metrics
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: tac-proxy-role
+rules:
+- apiGroups:
+  - authentication.k8s.io
+  resources:
+  - tokenreviews
+  verbs:
+  - create
+- apiGroups:
+  - authorization.k8s.io
+  resources:
+  - subjectaccessreviews
+  verbs:
+  - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  creationTimestamp: null
+  name: tac-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+  - delete
+  - get
+  - update
+- apiGroups:
+  - tcs.intel.com
+  resources:
+  - quoteattestations
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - tcs.intel.com
+  resources:
+  - quoteattestations/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - tcs.intel.com
+  resources:
+  - quoteattestations/status
+  verbs:
+  - get
+  - patch
+  - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tac-leader-election-rolebinding
+  namespace: attestation-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: tac-leader-election-role
+subjects:
+- kind: ServiceAccount
+  name: tac-svcact
+  namespace: attestation-controller
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tac-proxy-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: tac-proxy-role
+subjects:
+- kind: ServiceAccount
+  name: tac-svcact
+  namespace: attestation-controller
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tac-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: tac-role
+subjects:
+- kind: ServiceAccount
+  name: tac-svcact
+  namespace: attestation-controller
+---
+apiVersion: v1
+data:
+  controller_manager_config.yaml: |
+    apiVersion: controller-runtime.sigs.k8s.io/v1alpha1
+    kind: ControllerManagerConfig
+    health:
+      healthProbeBindAddress: :8081
+    metrics:
+      bindAddress: 127.0.0.1:8080
+    webhook:
+      port: 9443
+    leaderElection:
+      leaderElect: true
+      resourceName: 55c5974b.tac.intel.com
+kind: ConfigMap
+metadata:
+  name: tac-manager-config
+  namespace: attestation-controller
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    control-plane: controller-manager
+  name: tac-metrics-service
+  namespace: attestation-controller
+spec:
+  ports:
+  - name: https
+    port: 8443
+    targetPort: https
+  selector:
+    control-plane: controller-manager
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    control-plane: controller-manager
+  name: tac-app
+  namespace: attestation-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+  template:
+    metadata:
+      labels:
+        control-plane: controller-manager
+    spec:
+      containers:
+      - args:
+        - --plugin-name=null
+        - --plugin-socket-path=/plugins/null.sock
+        - --registry-socket-path=/registration/controller.sock
+        command:
+        - /null-plugin
+        image: docker.io/intel/trusted-attestation-controller:latest
+        name: null-plugin
+        resources:
+          limits:
+            cpu: 500m
+            memory: 100Mi
+          requests:
+            cpu: 100m
+            memory: 20Mi
+        volumeMounts:
+        - mountPath: /plugins
+          name: plugin-socket-dir
+        - mountPath: /registration
+          name: registry-socket-dir
+      - args:
+        - --leader-elect
+        - --registration-path=/registration/controller.sock
+        - --plugin-name=null
+        command:
+        - /manager
+        image: docker.io/intel/trusted-attestation-controller:latest
+        imagePullPolicy: Always
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        name: manager
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 200m
+            memory: 100Mi
+          requests:
+            cpu: 100m
+            memory: 20Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+        volumeMounts:
+        - mountPath: /plugins
+          name: plugin-socket-dir
+        - mountPath: /registration
+          name: registry-socket-dir
+      initContainers:
+      - command:
+        - sh
+        - -c
+        - set -x; chown -R 5000:5000 /registration /plugins
+        image: busybox
+        name: decode-secrets
+        volumeMounts:
+        - mountPath: /plugins
+          name: plugin-socket-dir
+        - mountPath: /registration
+          name: registry-socket-dir
+      serviceAccountName: tac-svcact
+      terminationGracePeriodSeconds: 10
+      volumes:
+      - emptyDir: {}
+        name: plugin-socket-dir
+      - emptyDir: {}
+        name: registry-socket-dir

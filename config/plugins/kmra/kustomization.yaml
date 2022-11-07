@@ -1,0 +1,29 @@
+resources:
+- ../../default
+- kmra-secrets.yaml
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+patches:
+- patch: |-
+    - op: add
+      path: /spec/template/spec/containers/1/args/-
+      value: --plugin-name=kmra
+    - op: add
+      path: /spec/template/spec/volumes/-
+      value:
+        name: kmra-secrets
+        secret:
+          secretName: kmra-secrets
+  target:
+    kind: Deployment
+
+patchesStrategicMerge:
+- manager_with_kmra_plugin.yaml
+
+configMapGenerator:
+- envs:
+  - .key-server.conf
+  name: kmra-config
+  namespace: attestation-controller

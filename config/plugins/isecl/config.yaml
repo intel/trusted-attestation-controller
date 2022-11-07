@@ -1,0 +1,33 @@
+#
+# iSecL plugin client configuration in YAML format
+#
+kbs:
+  # KBS server hostname/ip-address
+  host:
+  # Client Certificate and Privatekey paths
+  # Make sure that the KBS client secrets are mounted
+  # at this path: /etc/tac/kbs-certs
+  caCert: "/etc/tac/kbs-certs/ca.crt"
+  clientKey: "/etc/tac/kbs-certs/client.key"
+  clientCert: "/etc/tac/kbs-certs/client.crt"
+  # Bearer token to access KBS API
+  token:
+# SGX Quote Verification Service
+sqvs:
+  host:
+kmip:
+  # Server IP address
+  ip:
+  # Server hostname
+  hostname:
+  # Server port number defaults to 5696
+  port:
+  # base64 encoded username and password to access the server
+  username: ""
+  password: ""
+  # Client Certificate and Privatekey paths
+  # Make sure that the KMIP client secrets are mounted
+  # at this path: /etc/tac/kmip-certs
+  caCert: "/etc/tac/kmip-certs/ca.crt"
+  clientKey: "/etc/tac/kmip-certs/client.key"
+  clientCert: "/etc/tac/kmip-certs/client.crt"

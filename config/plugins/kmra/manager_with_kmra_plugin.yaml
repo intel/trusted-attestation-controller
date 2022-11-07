@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+  namespace: system
+spec:
+  template:
+    spec:
+      containers:
+      - name: kmra-plugin
+        command:
+        - /kmra-plugin
+        args:
+        - --plugin-name=kmra
+        - --plugin-socket-path=/plugins/kmra.sock
+        - --registry-socket-path=/registration/controller.sock
+        image: kmra-plugin:latest
+        resources:
+          limits:
+            cpu: 500m
+            memory: 100Mi
+          requests:
+            cpu: 100m
+            memory: 20Mi
+        envFrom:
+        - configMapRef:
+            name: kmra-config
+        volumeMounts:
+        - name: kmra-secrets
+          mountPath: /certs/
+          readOnly: true
+        - name: plugin-socket-dir
+          mountPath: /plugins
+        - name: registry-socket-dir
+          mountPath: /registration

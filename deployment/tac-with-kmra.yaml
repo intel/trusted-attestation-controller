@@ -157,10 +157,10 @@ subjects:
 ---
 apiVersion: v1
 data:
-  KEY_SERVER: localhost:443
+  KEY_SERVER: ""
 kind: ConfigMap
 metadata:
-  name: tac-key-server-config
+  name: kmra-config
   namespace: attestation-controller
 ---
 apiVersion: v1
@@ -189,9 +189,8 @@ data:
   client.key: ""
 kind: Secret
 metadata:
-  name: tac-kmra-secrets
+  name: kmra-secrets
   namespace: attestation-controller
-type: Opaque
 ---
 apiVersion: v1
 kind: Service
@@ -227,11 +226,38 @@ spec:
     spec:
       containers:
       - args:
+        - --plugin-name=kmra
+        - --plugin-socket-path=/plugins/kmra.sock
+        - --registry-socket-path=/registration/controller.sock
+        command:
+        - /kmra-plugin
+        envFrom:
+        - configMapRef:
+            name: kmra-config
+        image: docker.io/intel/trusted-attestation-controller:latest
+        name: kmra-plugin
+        resources:
+          limits:
+            cpu: 500m
+            memory: 100Mi
+          requests:
+            cpu: 100m
+            memory: 20Mi
+        volumeMounts:
+        - mountPath: /certs/
+          name: kmra-secrets
+          readOnly: true
+        - mountPath: /plugins
+          name: plugin-socket-dir
+        - mountPath: /registration
+          name: registry-socket-dir
+      - args:
         - --leader-elect
         - --registration-path=/registration/controller.sock
+        - --plugin-name=kmra
         command:
         - /manager
-        image: intel/trusted-attestation-controller:latest
+        image: docker.io/intel/trusted-attestation-controller:latest
         imagePullPolicy: Always
         livenessProbe:
           httpGet:
@@ -256,33 +282,7 @@ spec:
         securityContext:
           allowPrivilegeEscalation: false
         volumeMounts:
-        - mountPath: /kmra
-          name: plugin-socket-dir
-        - mountPath: /registration
-          name: registry-socket-dir
-      - args:
-        - --plugin-name=KMRA
-        - --plugin-socket-path=/kmra/kmra.sock
-        - --registry-socket-path=/registration/controller.sock
-        command:
-        - /kmra-plugin
-        envFrom:
-        - configMapRef:
-            name: tac-key-server-config
-        image: intel/trusted-attestation-controller:latest
-        name: kmra-plugin
-        resources:
-          limits:
-            cpu: 500m
-            memory: 100Mi
-          requests:
-            cpu: 100m
-            memory: 20Mi
-        volumeMounts:
-        - mountPath: /certs/
-          name: ca-secrets
-          readOnly: true
-        - mountPath: /kmra
+        - mountPath: /plugins
           name: plugin-socket-dir
         - mountPath: /registration
           name: registry-socket-dir
@@ -290,16 +290,11 @@ spec:
       - command:
         - sh
         - -c
-        - set -x; for f in /tmp/certs/*; do cat $f | base64 -d > /certs/$(basename
-          $f); done ; chown -R 5000:5000 /registration /kmra /certs
+        - set -x; chown -R 5000:5000 /registration /plugins
         image: busybox
         name: decode-secrets
         volumeMounts:
-        - mountPath: /certs/
-          name: ca-secrets
-        - mountPath: /tmp/certs
-          name: pre-ca-secrets
-        - mountPath: /kmra
+        - mountPath: /plugins
           name: plugin-socket-dir
         - mountPath: /registration
           name: registry-socket-dir
@@ -310,8 +305,6 @@ spec:
         name: plugin-socket-dir
       - emptyDir: {}
         name: registry-socket-dir
-      - name: pre-ca-secrets
+      - name: kmra-secrets
         secret:
-          secretName: tac-kmra-secrets
-      - emptyDir: {}
-        name: ca-secrets
+          secretName: kmra-secrets
