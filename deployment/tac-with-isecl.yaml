@@ -274,7 +274,7 @@ spec:
         - --registry-socket-path=/registration/controller.sock
         command:
         - /isecl-plugin
-        image: docker.io/intel/trusted-attestation-controller:latest
+        image: docker.io/intel/trusted-attestation-controller:0.4.0
         name: isecl-plugin
         resources:
           limits:
@@ -302,7 +302,7 @@ spec:
         - --plugin-name=isecl
         command:
         - /manager
-        image: docker.io/intel/trusted-attestation-controller:latest
+        image: docker.io/intel/trusted-attestation-controller:0.4.0
         imagePullPolicy: Always
         livenessProbe:
           httpGet:

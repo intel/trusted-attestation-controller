@@ -234,7 +234,7 @@ spec:
         envFrom:
         - configMapRef:
             name: kmra-config
-        image: docker.io/intel/trusted-attestation-controller:latest
+        image: docker.io/intel/trusted-attestation-controller:0.4.0
         name: kmra-plugin
         resources:
           limits:
@@ -257,7 +257,7 @@ spec:
         - --plugin-name=kmra
         command:
         - /manager
-        image: docker.io/intel/trusted-attestation-controller:latest
+        image: docker.io/intel/trusted-attestation-controller:0.4.0
         imagePullPolicy: Always
         livenessProbe:
           httpGet:
