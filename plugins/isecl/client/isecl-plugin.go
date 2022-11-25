@@ -76,7 +76,7 @@ func NewISecLPlugin(cfg *config.Config) (plugin.KeyManagerPlugin, error) {
 		return nil, fmt.Errorf("failed to initialize KBS client: %v", err)
 	}
 
-	kmipClient, err := kmip.NewClient(cfg.Kmip)
+	kmipClient, err := kmip.NewClient(&cfg.Kmip)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize KMIP client: %v", err)
 	}

@@ -2,10 +2,10 @@
 set -e
 
 ###################################
-SUDO="sudo -u"
+SUDO="sudo -E"
 # Environment variables
 WORK_DIR=${WORKDIR:-$HOME}
-BINARIES_DIR={BINARIES_DIR:-$WORK_DIR/isecl-build/binaries}
+BINARIES_DIR=${BINARIES_DIR:-$WORK_DIR/isecl-build/binaries}
 ISECL_RELEASE=${ISECL_RELEASE:-v4.2.0-Beta}
 SCS_RELEASE=${SCS_RELEASE-v4.1.2}
 SQVS_RELEASE=${SQVS_RELEASE:-v4.1.2}
@@ -19,25 +19,25 @@ INSTALL_ADMIN_PASSWORD=${INSTALL_ADMIN_PASSWORD:-"admin"}
 
 AAS_PORT=${AAS_PORT:-8444}
 AAS_URL=https://$SYSTEM_IP:$AAS_PORT/aas/v1
-AAS_ADMIN_USERNAME=${AAS_ADMIN_USERNAME:-"admin@aas"}
+AAS_ADMIN_USERNAME=${AAS_ADMIN_USERNAME:-"adminaas"}
 AAS_ADMIN_PASSWORD=${AAS_ADMIN_PASSWORD:-"admin"}
 AAS_DB_NAME=${AAS_DB_NAME:-"aasdb"}
-AAS_DB_USERNAME=${AAS_ADMIN_USERNAME:-"user@aasdb"}
+AAS_DB_USERNAME=${AAS_ADMIN_USERNAME:-"useraasdb"}
 AAS_DB_PASSWORD=${AAS_DB_PASSWORD:-"aasdbpwd"}
 
 CMS_PORT=${CMS_PORT:-8445}
 CMS_URL=https://$SYSTEM_IP:$CMS_PORT/cms/v1/
 
 KBS_PORT=9443
-KBS_SERVICE_USERNAME=${KBS_SERVICE_USERNAME:-"user@kub"}
+KBS_SERVICE_USERNAME=${KBS_SERVICE_USERNAME:-"userkbs"}
 KBS_SERVICE_PASSWORD=${KBS_SERVICE_PASSWORD:-"kbspasswd"}
 
 SCS_PORT=${SCS_PORT:-9000}
 SCS_URL=https://$SYSTEM_IP:$SCS_PORT/scs/sgx/certification/v1
-SCS_ADMIN_USERNAME=${SCS_ADMIN_USERNAME:-"admin@scs"}
+SCS_ADMIN_USERNAME=${SCS_ADMIN_USERNAME:-"adminscs"}
 SCS_ADMIN_PASSWORD=${SCS_ADMIN_PASSWORD:-"admin"}
 SCS_DB_NAME=${SCS_DB_NAME:-"scsdb"}
-SCS_DB_USERNAME=${SCS_ADMIN_USERNAME:-"user@scsdb"}
+SCS_DB_USERNAME=${SCS_ADMIN_USERNAME:-"userscsdb"}
 SCS_DB_PASSWORD=${SCS_DB_PASSWORD:-"scsdbpwd"}
 
 INTEL_PROVISIONING_SERVER="https://api.trustedservices.intel.com/sgx/certification/v3"
@@ -48,14 +48,13 @@ SQVS_URL=https://$SYSTEM_IP:$SQVS_PORT/svs/v1
 KMIP_SERVER_PORT=${KMIP_SERVER_PORT=5696}
 KMIP_CLIENT_CERT_PATH=${KMIP_CLIENT_CERT_PATH:-"/etc/pykmip/client_certificate.pem"}
 KMIP_CLIENT_KEY_PATH=${KMIP_CLIENT_KEY_PATH:-"/etc/pykmip/client_key.pem"}
-KMIP_ROOT_CERT_PATH=${KMIP_ROOT_CERT_PATH=:-"/etc/pykmip/root_certififcate.pem"}
+KMIP_ROOT_CERT_PATH=${KMIP_ROOT_CERT_PATH:-"/etc/pykmip/root_certificate.pem"}
 
 TAC_CN=trusted-attestation-controller # CommonName used for TAC client certificate
 TAC_USERNAME=tacuser
 TAC_PASSWORD=tacpasswd
 ###############################################################################
 
-CMS_TLS_SHA=
 ADMIN_TOKEN=
 CMS_TLS_SHA=
 
@@ -109,8 +108,7 @@ copy_binaries()
     cp -pf utils/build/skc-tools/skc_scripts/env/{authservice,cms,iseclpgdb,kbs}.env $BINARIES_DIR/env &&
     cp -pf utils/build/skc-tools/skc_scripts/env/install_pgdb.sh $BINARIES_DIR/ &&
     cp -pf utils/build/skc-tools/skc_scripts/install_sgx_infra.sh $BINARIES_DIR/ &&
-    cp -pf utils/build/skc-tools/kbs_script/*.sh $BINARIES_DIR/ &&
-    cp -pf utils/build/skc-tools/kbs_script/server.conf $BINARIES_DIR/
+    cp -pf utils/build/skc-tools/kbs_script/* $BINARIES_DIR/
 }
 
 uninstall_all()
@@ -164,24 +162,24 @@ install_databases()
 install_cms()
 {
     echo "Installing Certificate Management Service...."
+    cp $BINARIES_DIR/env/cms.env ~/cms.env
     sed -i "s/^\(AAS_TLS_SAN\s*=\s*\).*\$/\1$SYSTEM_SAN/" ~/cms.env
     sed -i "s@^\(AAS_API_URL\s*=\s*\).*\$@\1$AAS_URL@" ~/cms.env
     sed -i "s/^\(SAN_LIST\s*=\s*\).*\$/\1$SYSTEM_SAN/" ~/cms.env
 
-    (cd $BINARIES_DIR; $SUDO cms-*.bin)
+    (cd $BINARIES_DIR; $SUDO ./cms-*.bin)
     $SUDO /opt/cms/bin/cms status > /dev/null
     if [ $? -ne 0 ]; then
 	    echo "Certificate Management Service Installation Failed!!"
 	    exit 1
     fi
     echo "Installed Certificate Management Service."
-    CMS_TLS_SHA=$($SUDO /opt/cms/bin/cms tlscertsha384)
 }
 
 install_authservice()
 {
     cp $BINARIES_DIR/env/authservice.env ~/authservice.env
-    trap rm -f ~/authservice.env EXIT
+    #trap 'rm -f ~/authservice.env' EXIT
     echo "Copying Certificate Management Service token to AuthService...."
     export AAS_TLS_SAN=$SYSTEM_SAN
     CMS_TOKEN=$($SUDO /opt/cms/bin/cms setup cms-auth-token --force | grep 'JWT Token:' | awk '{print $3}')
@@ -208,32 +206,29 @@ install_authservice()
 
 populate_users()
 {
-    cp $BINARIES_DIR/env/populate-users.env ~/populate-users.env
-    trap rm -f ~/populate-users.env EXIT
+    #trap 'rm -f ~/populate-users.env' EXIT
     echo "Updating Populate users env ...."
     ISECL_INSTALL_COMPONENTS=AAS,SCS,SQVS,KBS,SKC-LIBRARY
-    sed -i "s@^\(ISECL_INSTALL_COMPONENTS\s*=\s*\).*\$@\1$ISECL_INSTALL_COMPONENTS@" ~/populate-users.env
-    sed -i "s@^\(AAS_API_URL\s*=\s*\).*\$@\1$AAS_URL@" ~/populate-users.env
-    sed -i "s/^\(AAS_ADMIN_USERNAME\s*=\s*\).*\$/\1$AAS_ADMIN_USERNAME/" ~/populate-users.env
-    sed -i "s/^\(AAS_ADMIN_PASSWORD\s*=\s*\).*\$/\1$AAS_ADMIN_PASSWORD/" ~/populate-users.env
-    sed -i "s@^\(SCS_CERT_SAN_LIST\s*=\s*\).*\$@\1$SYSTEM_SAN@" ~/populate-users.env
-    sed -i "s@^\(SQVS_CERT_SAN_LIST\s*=\s*\).*\$@\1$SYSTEM_SAN@" ~/populate-users.env
-    sed -i "s/^\(SCS_SERVICE_USERNAME\s*=\s*\).*\$/\1$SCS_ADMIN_USERNAME/" ~/populate-users.env
-    sed -i "s/^\(SCS_SERVICE_PASSWORD\s*=\s*\).*\$/\1$SCS_ADMIN_PASSWORD/" ~/populate-users.env
-    sed -i "s/^\(INSTALL_ADMIN_USERNAME\s*=\s*\).*\$/\1$INSTALL_ADMIN_USERNAME/" ~/populate-users.env
-    sed -i "s/^\(INSTALL_ADMIN_PASSWORD\s*=\s*\).*\$/\1$INSTALL_ADMIN_PASSWORD/" ~/populate-users.env
-    sed -i "s/^\(SKC_LIBRARY_CERT_COMMON_NAME\s*=\s*\).*\$/\1$TAC_CN/" ~/populate-users.env
-    sed -i "s/^\(SKC_LIBRARY_USERNAME\s*=\s*\).*\$/\1$TAC_USERNAME/" ~/populate-users.env
-    sed -i "s/^\(SKC_LIBRARY_PASSWORD\s*=\s*\).*\$/\1$TAC_PASSWORD/" ~/populate-users.env
-    sed -i "s/^\(KBS_CERT_SAN_LIST\s*=\s*\).*\$/\1$SYSTEM_SAN/" ~/populate-users.env
-    sed -i "s/^\(KBS_SERVICE_USERNAME\s*=\s*\).*\$/\1$KBS_SERVICE_USERNAME/" ~/populate-users.env
-    sed -i "s/^\(KBS_SERVICE_PASSWORD\s*=\s*\).*\$/\1$KBS_SERVICE_PASSWORD/" ~/populate-users.env
-
-    sed -i "/GLOBAL_ADMIN_USERNAME/d" ~/populate-users.env
-    sed -i "/GLOBAL_ADMIN_PASSWORD/d" ~/populate-users.env
+    cat<<EOF > ~/populate-users.env
+ISECL_INSTALL_COMPONENTS=$ISECL_INSTALL_COMPONENTS
+AAS_API_URL=$AAS_URL
+AAS_ADMIN_USERNAME=$AAS_ADMIN_USERNAME
+AAS_ADMIN_PASSWORD=$AAS_ADMIN_PASSWORD
+SQVS_CERT_SAN_LIST=$SYSTEM_SAN
+SCS_SERVICE_USERNAME=$SCS_ADMIN_USERNAME
+SCS_SERVICE_PASSWORD=$SCS_ADMIN_PASSWORD
+INSTALL_ADMIN_USERNAME=$INSTALL_ADMIN_USERNAME
+INSTALL_ADMIN_PASSWORD=$INSTALL_ADMIN_PASSWORD
+SKC_LIBRARY_CERT_COMMON_NAME=$TAC_CN
+SKC_LIBRARY_USERNAME=$TAC_USERNAME
+SKC_LIBRARY_PASSWORD=$TAC_PASSWORD
+KBS_CERT_SAN_LIST=$SYSTEM_SAN
+KBS_SERVICE_USERNAME=$KBS_SERVICE_USERNAME
+KBS_SERVICE_PASSWORD=$KBS_SERVICE_PASSWORD
+EOF
 
     echo "Invoking populate users script...."
-    (cd $BINARIES_DIR; populate-users.sh
+    (cd $BINARIES_DIR; ./populate-users.sh -answerfile ~/populate-users.env
     if [ $? -ne 0 ]; then
 	    echo "Populate user script failed!!"
 	    exit 1
@@ -242,8 +237,6 @@ populate_users()
 
 install_scs()
 {
-    echo "Getting AuthService Admin token...."
-    ADMIN_TOKEN=$(curl --noproxy "*" -k -X POST $AAS_URL/token -d '{"username": "'"$INSTALL_ADMIN_USERNAME"'", "password": "'"$INSTALL_ADMIN_PASSWORD"'"}')
     if [ $? -ne 0 ]; then
 	    echo "Failed to fetch admin token!!"
 	    exit 1
@@ -254,7 +247,7 @@ install_scs()
     fi
 
     cp $BINARIES_DIR/env/scs.env ~/scs.env
-    trap rm -f ~/scs.env EXIT
+    #trap 'rm -f ~/scs.env' EXIT
     SCS_DB_HOSTNAME="localhost"
     SCS_DB_SSLCERTSRC="/usr/local/pgsql/data/server.crt"
     sed -i "s/^\(SAN_LIST\s*=\s*\).*\$/\1$SYSTEM_SAN/" ~/scs.env
@@ -290,7 +283,7 @@ install_sqvs()
 	    exit 1
     fi
     cp $BINARIES_DIR/env/sqvs.env ~/sqvs.env
-    trap rm -f ~/sqvs.env EXIT
+    #trap 'rm -f ~/sqvs.env' EXIT
 
     echo "Updating SGX Quote Verification Service env...."
     sed -i "s/^\(SAN_LIST\s*=\s*\).*\$/\1$SYSTEM_SAN/" ~/sqvs.env
@@ -320,7 +313,7 @@ install_kbs()
     KBS_HOSTNAME="$(hostname)"
 
     cp $BINARIES_DIR/env/kbs.env ~/kbs.env
-    trap rm -f ~/kbs.env EXIT
+    #trap 'rm -f ~/kbs.env' EXIT
 
     echo "Updating Key Broker Service env...."
     sed -i "s/^\(TLS_SAN_LIST\s*=\s*\).*\$/\1$SYSTEM_SAN,$KBS_HOSTNAME/" ~/kbs.env
@@ -376,9 +369,13 @@ copy_binaries
 install_pgdb
 install_databases
 install_cms
+CMS_TLS_SHA=$($SUDO /opt/cms/bin/cms tlscertsha384)
 install_authservice
 populate_users
+echo "Getting AuthService Admin token...."
+ADMIN_TOKEN=$(curl --noproxy "*" -k -X POST $AAS_URL/token -d '{"username": "'"$INSTALL_ADMIN_USERNAME"'", "password": "'"$INSTALL_ADMIN_PASSWORD"'"}')
 install_scs
 install_sqvs
 install_kbs
 install_pykmip
+install_kbs

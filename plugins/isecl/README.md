@@ -11,7 +11,7 @@ platform data collection service and an efficient verification engine to
 perform comprehensive trust evaluations.
 
 This plugin uses Intel(R) SecL Key Broker Service (KBS) to securely transfer CA
-private keys to the [trusted-certificate-issuer (TCI)](https://github.com/intel/trusted-certificate-issuer) SGX Enclave from a KMIP-compliant key management server.
+private keys to the [trusted-certificate-issuer (TCI)](https://github.com/intel/trusted-certificate-issuer) SGX Enclave from a KMIP-compliant key management server such as [HashiCorp Vault secrets engine](https://www.vaultproject.io/docs/secrets/kmip).
 
 ## Setup
 
@@ -34,23 +34,27 @@ Other dependencies:
 key management service, such as [PyKMIP](https://pykmip.readthedocs.io/en/latest/server.html) or,
 [HashiCorp Vault](https://www.vaultproject.io/docs/secrets/kmip)
 
-You can use [setup_isecl.sh](./tools/setup-isecl.sh) to setup the above
+You can use [setup_isecl.sh](./tools/setup-isecl.sh) script to setup the above
 components on a linux machine or on a VM. [Intel(R) SecL utils](https://github.com/intel-secl/utils)
 repo has instructions to deploy them in different environments.
 
 ### Configure the client TLS certificates
 
 In order the `trusted-attestation-controller` to access KBS API, it shall be
-configured with a appropriate permissions. And also with valid private key
+configured with the appropriate permissions. And also with valid private key
 and a TLS client certificate that was signed by the CMS CA. Check
 [plugin configuration](#plugin-configuration) section for additional details.
 
 - Configure TAC plugin with appropriate permissions:
 ```sh
+# Set appropriate hostname/IP address where the iSecL services are running
+export AAS_HOST="$(hostname)" # Hostname (or IP address of the host) where AuthService is running
+export CMS_HOST="$(hostname)" # Hostname (or IP address of the host) where CMS is running
+export KBS_HOST="$(hostname)" # Hostname (or IP address of the host) where KBS is running
 # Get AuthService token for creating role with permissions
-export AAS_ADMIN_USERNAME="admin@aas" # AuthService admin username, defined in setup-isecl.sh
+export AAS_ADMIN_USERNAME="adminaas" # AuthService admin username, defined in setup-isecl.sh
 export AAS_ADMIN_PASSWORD="admin" # AuthService password, defined in setup-isecl.sh
-export ADMIN_TOKE=$(curl --noproxy "*" -k -X POST https://$(hostname):8444/aas/v1/token -d '{"username": "'$AAS_ADMIN_USERNAME'", "password": "'$AAS_ADMIN_PASSWORD'"}')
+export ADMIN_TOKEN=$(curl --noproxy "*" -k -X POST https://$AAS_HOST:8444/aas/v1/token -d '{"username": "'$AAS_ADMIN_USERNAME'", "password": "'$AAS_ADMIN_PASSWORD'"}')
 cat <<EOF > /tmp/tac-role.json
 {
   "name": "KeyManager",
@@ -59,22 +63,22 @@ cat <<EOF > /tmp/tac-role.json
 }
 EOF
 # Add key manager role
-KM_ROLE_ID=$(curl --noproxy "*" -k -H "Authorization: Bearer $ADMIN_TOKEN" -X POST https://$(hostname):8444/aas/v1/roles -d @/tmp/tac-role.json | jq '.role_id' -r)
+KM_ROLE_ID=$(curl --noproxy "*" -k -H "Authorization: Bearer $ADMIN_TOKEN" -X POST https://$AAS_HOST:8444/aas/v1/roles -d @/tmp/tac-role.json | jq '.role_id' -r)
 # Add quote verification role
-SQVS_ROLE_ID=$(curl --noproxy "*" -k -H "Authorization: Bearer $ADMIN_TOKEN" -X POST https://$(hostname):8444/aas/v1/roles -d '{"name": "QuoteVerifier", "service": "SQVS" }' | jq '.role_id' -r)
+SQVS_ROLE_ID=$(curl --noproxy "*" -k -H "Authorization: Bearer $ADMIN_TOKEN" -X POST https://$AAS_HOST:8444/aas/v1/roles -d '{"name": "QuoteVerifier", "service": "SQVS" }' | jq '.role_id' -r)
 # Update TAC_USER roles
-TAC_USER_ID=$(curl --noproxy "*" -k -H "Authorization: Bearer $ADMIN_TOKEN" -X GET  https://$(hostname):8444/aas/v1/users?name=tacuser | jq '.[0].user_id' -r)
-curl --noproxy "*" -k -H "Authorization: Bearer $ADMIN_TOKEN" -X POST https://$(hostname):8444/aas/v1/users/$TAC_USER_ID/roles -d '{"role_ids": [ "'$KM_ROLE_ID'","'$SQVS_ROLE_ID'" ] }'
+TAC_USER_ID=$(curl --noproxy "*" -k -H "Authorization: Bearer $ADMIN_TOKEN" -X GET  https://$AAS_HOST:8444/aas/v1/users?name=tacuser | jq '.[0].user_id' -r)
+curl --noproxy "*" -k -H "Authorization: Bearer $ADMIN_TOKEN" -X POST https://$AAS_HOST:8444/aas/v1/users/$TAC_USER_ID/roles -d '{"role_ids": [ "'$KM_ROLE_ID'","'$SQVS_ROLE_ID'" ] }'
 ```
 
 - Fetch the CMS Certificate Authority root certificate:
 
 ```sh
-export TAC_USER="tacuser" # TAC client service username, defined in setup-isecl.sh
-export TAC_PASSWORD="tacpassword" #TAC client service password, defined in setup-isecl.sh
-export TAC_TOKEN=$(curl --noproxy "*" -k -X POST https://$(hostname):8444/aas/v1/token -d '{"username": "'$TAC_USER'", "password": "'$TAC_PASSWORD'"}')
+export ADMIN_USER="admin" # install admin username, defined in setup-isecl.sh
+export ADMIN_PASSWORD="admin" #install admin password, defined in setup-isecl.sh
+export ADMIN_TOKEN=$(curl --noproxy "*" -k -X POST https://$AAS_HOST:8444/aas/v1/token -d '{"username": "'$ADMIN_USER'", "password": "'$ADMIN_PASSWORD'"}')
 # Get CMS CA file
-curl --noproxy "*" -k https://$(hostname):8445/cms/v1/ca-certificates -H "Authorization: Bearer $TAC_TOKEN" -H "Accept: application/x-pem-file" > cmsca.pem
+curl --noproxy "*" -k https://$CMSS_HOST:8445/cms/v1/ca-certificates -H "Authorization: Bearer $ADMIN_TOKEN" -H "Accept: application/x-pem-file" > cmsca.pem
 ```
 
 -  Get a client TLS certificate signed by the CMS CA
@@ -83,7 +87,7 @@ curl --noproxy "*" -k https://$(hostname):8445/cms/v1/ca-certificates -H "Author
 # Generate a CSR
 # NOTE: the CN should match with the TAC_CN in ./setup-isecl.sh
 openssl req -newkey rsa:3072 -keyout tac-key.pem -out request.csr -subj /CN=trusted-attestation-controller -nodes -sha384
-curl --noproxy="*" -k https://$(hostname):8445/cms/v1/certificates?certType=TLS-Client -H "Authorization: Bearer $TAC_TOKEN" -H "Accept: application/x-pem-file" -H "Content-Type: application/x-pem-file" -d "$(cat request.csr)" -o tac-client.cert
+curl --noproxy "*" -k https://$CMS_HOST:8445/cms/v1/certificates?certType=TLS-Client -H "Authorization: Bearer $ADMIN_TOKEN" -H "Accept: application/x-pem-file" -H "Content-Type: application/x-pem-file" -d "$(cat request.csr)" -o tac-client.crt
 ```
 
 ### Initialize the key transfer policy
@@ -108,7 +112,7 @@ cat > key-transfer-policy.json << EOF
     "attestation_type_anyof":["SGX"]
 }
 EOF
-curl --noproxy "*" -k -X POST https://$(hostname):9443/kbs/v1/key-transfer-policies \
+curl --noproxy "*" -k -X POST https://$KBS_HOST:9443/kbs/v1/key-transfer-policies \
    -d @key-transfer-policy.json
 ```
 
@@ -128,7 +132,7 @@ key/certificate into the the key server.
 - Build `kmiptool` from source
 ```sh
 git clone https://github.com/intel/trusted-attestation-controller.git && cd trusted-attestation-controller
-go build -o ./kmiptool ./plugins/isecl/tools/kmiptool/kmiptoo.go
+go build -o ./kmiptool ./plugins/isecl/tools/kmiptool/kmiptool.go
 ```
 Assumptions for the below example:
 - The key and certificate is consumed by a `TCSClusterIssuer` named `sgx-ca`.
@@ -139,7 +143,9 @@ export TCS_ISSUER=tcsclusterissuer.tcs.intel.com/sgx-ca
 export TPID="<<key transfer policy id returned in the earlier step>>"
 export SGX_CA_PRIVATE_KEY=sgx-ca-key.pem
 export SGX_CA_CERTIFICATE=sgx-ca-cert.pem
-
+export TAC_USERNAME=tacuser # username (SKC_LIBRARY_USERNAME) used in the setup-isech.sh script
+export TAC_USERNAME=tacpasswd # password (SKC_LIBRARY_PASSWORD) used in the setup-isech.sh script
+export TAC_TOKEN=$(curl --noproxy "*" -k -X POST https://$AAS_HOST:8444/aas/v1/token -d '{"username": "'$TAC_USERNAME'", "password": "'$TAC_PASSWORD'"}')
 # Create a RSA key pair in the key server 
 cat > key-info.json << EOF
 {
@@ -150,9 +156,10 @@ cat > key-info.json << EOF
     "transfer_policy_id":"$TPID"
 }
 EOF
-KEY_ID=$(curl --noproxy="*" -k -X POST https://$(hostname):9443/kbs/v1/keys \
-    -H "Accept: application/json" -H "Content-Type: application/json"
-    -d @./key-info.json | jq '.key_information.kmip_key_id')
+# Capture the associated KMIP key-id for the key
+KEY_ID=$(curl --noproxy "*" -k -X POST https://$KBS_HOST:9443/kbs/v1/keys \
+    -H "Accept: application/json" -H "Content-Type: application/json" -H "Authorization: Bearer $TAC_TOKEN" \
+    -d "@./key-info.json" | jq '.key_information.kmip_key_id')
 
 # KMIP server client configuration
 export KMIP_USERNAME="username" # base64 encoded string
@@ -161,20 +168,19 @@ export KMIP_ROOT_CERT=/location/of/root/ca-cert.pem
 export KMIP_CLENT_CERT=/location/of/client/cert.pem
 export KMIP_CLENT_KEY=/location/of/client/key.pem
 export KMIP_SERVER_IP="127.0.0.1" # server ip address
-export KMIP_SERVER_PORT="5696" # server port number
 
 # fetch the newly created private key from the server
-./kmiptool -cmd get-key -ip $KMIP_SERVER_IP -port KMIP_SERVER_PORT \
-   -ca-cert $KMIP_ROOT_CERT -client-key $KMIP_CLIENT_KEY -client-cert $KMIP_CLIENT_CERT \
-   -id $KEY_ID > $(SGX_CA_PRIVATE_KEY)
+./kmiptool -cmd get-key -kmip-server-ip $KMIP_SERVER_IP \
+   -kmip-ca-cert $KMIP_ROOT_CERT -kmip-client-key $KMIP_CLIENT_KEY \
+   -kmip-client-cert $KMIP_CLIENT_CERT -id $KEY_ID > $(SGX_CA_PRIVATE_KEY)
 
 # Sign a certificate for using private key with a root CA and save 
 # the certificate into $SGX_CA_CERTIFICATE.
 
 # store certificate into the key server
-./kmiptool -cmd store-cert -ip $KMIP_SERVER_IP -port KMIP_SERVER_PORT \
-   -ca-cert $KMIP_ROOT_CERT -client-key $KMIP_CLIENT_KEY -client-cert $KMIP_CLIENT_CERT \
-   -cert "$(<SGX_CA_CERTIFICATE)" -label $(TCS_ISSUER)
+./kmiptool -cmd store-cert -kmip-server-ip $KMIP_SERVER_IP \
+   -kmip-ca-cert $KMIP_ROOT_CERT -kmip-client-key $KMIP_CLIENT_KEY \
+   -kmip-client-cert $KMIP_CLIENT_CERT -cert "$(<SGX_CA_CERTIFICATE)" -label "$TCS_ISSUER"
 ```
 
 ## Plugin Configuration
