@@ -29,10 +29,6 @@ jobs:
       with:   
         json: true
         args: --sarif-file-output=snyk.json
-
-    - name: Check snyk file
-      run: | 
-        cat snyk.json
         
     - name: Upload result to GitHub Code Scanning
       uses: github/codeql-action/upload-sarif@v2
