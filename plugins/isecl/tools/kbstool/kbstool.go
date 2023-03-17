@@ -294,9 +294,9 @@ func createKey(kbs *config.KbsConfig, keyType string, keyLength int, keyTransfer
 	}
 	request = "{" + request + "}"
 
-	client, err := httpclient.NewHttpClient(nil)
+	client, err := httpclient.NewHttpClientInsecure(5 * time.Minute)
 	if err != nil {
-		return fmt.Errorf("Failed to prepare the request: %v", err)
+		return fmt.Errorf("failed to prepare the request: %v", err)
 	}
 	header := map[string]string{
 		"Authorization": "Bearer " + kbs.BearerToken,
@@ -326,7 +326,7 @@ func deleteKey(kbs *config.KbsConfig, keyID string) error {
 	}
 	url := kbs.URL() + "/keys/" + keyID
 
-	client, err := httpclient.NewHttpClient(nil)
+	client, err := httpclient.NewHttpClientInsecure(5 * time.Minute)
 	if err != nil {
 		return err
 	}
@@ -355,7 +355,7 @@ func deleteKey(kbs *config.KbsConfig, keyID string) error {
 func listKeys(kbs *config.KbsConfig) error {
 	url := kbs.URL() + "/keys" //?algorithm=RSA"
 
-	client, err := httpclient.NewHttpClient(nil)
+	client, err := httpclient.NewHttpClientInsecure(5 * time.Minute)
 	if err != nil {
 		return err
 	}
