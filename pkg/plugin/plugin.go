@@ -51,6 +51,7 @@ type KeyManagerPlugin interface {
 
 type plugin struct {
 	*grpcserver.GrpcServer
+	pluginapi.UnimplementedPluginServer
 	log        logr.Logger
 	name       string
 	socketPath string
