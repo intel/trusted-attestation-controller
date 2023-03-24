@@ -75,10 +75,10 @@ test: manifests generate fmt vet ## Run tests.
 ##@ Build
 
 build: vendor generate fmt vet ## Build manager binary.
-	go build -o bin/manager main.go
+	go build -buildmode=pie -o bin/manager main.go
 
 $(PLUGINS): generate-proto fmt vet ## Build plugin binaries.
-	go build -o bin/$@-plugin ./plugins/$@/main.go
+	go build -buildmode=pie -o bin/$@-plugin ./plugins/$@/main.go
 
 
 # additional arguments to pass to 'docker build'

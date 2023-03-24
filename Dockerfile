@@ -11,10 +11,10 @@ COPY pkg pkg
 COPY plugins plugins
 COPY main.go main.go
 
-RUN GOOS=linux GOARCH=amd64 go build -a -o manager /main.go
-RUN GOOS=linux GOARCH=amd64 go build -a -o kmra-plugin /plugins/kmra/main.go
-RUN GOOS=linux GOARCH=amd64 go build -a -o null-plugin /plugins/null/main.go
-RUN GOOS=linux GOARCH=amd64 go build -a -o isecl-plugin /plugins/isecl/main.go
+RUN GOOS=linux GOARCH=amd64 go build -a -buildmode=pie -o manager /main.go
+RUN GOOS=linux GOARCH=amd64 go build -a -buildmode=pie -o kmra-plugin /plugins/kmra/main.go
+RUN GOOS=linux GOARCH=amd64 go build -a -buildmode=pie -o null-plugin /plugins/null/main.go
+RUN GOOS=linux GOARCH=amd64 go build -a -buildmode=pie -o isecl-plugin /plugins/isecl/main.go
 RUN mkdir -p /usr/local/share/package-licenses \
   && cp /usr/local/go/LICENSE /usr/local/share/package-licenses/go.LICENSE \
   && cp LICENSE /usr/local/share/package-licenses/trusted-attestation-controller.LICENSE
