@@ -10,6 +10,7 @@ COPY controllers controllers
 COPY pkg pkg
 COPY plugins plugins
 COPY main.go main.go
+COPY vendor vendor
 
 RUN GOOS=linux GOARCH=amd64 go build -a -buildmode=pie -o manager /main.go
 RUN GOOS=linux GOARCH=amd64 go build -a -buildmode=pie -o kmra-plugin /plugins/kmra/main.go
