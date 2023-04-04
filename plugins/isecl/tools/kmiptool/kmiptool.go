@@ -19,6 +19,7 @@ func main() {
 		"list-certs",
 		"delete-cert",
 	}
+	var configFile string
 	var cmd string
 	var id string
 	var label string
@@ -29,7 +30,10 @@ func main() {
 	var err error
 	var client *kmip.Client
 
-	kmipCfg := kmip.NewClientConfig()
+	kmipCfg := kmip.ClientConfig{
+		KmipVersion: "1.4",
+	}
+	flag.StringVar(&configFile, "config-file", "", "kmip client configuration file")
 	flag.StringVar(&cmd, "cmd", "", fmt.Sprintf("command to execute. Supported commands: %v", cmdList))
 	flag.StringVar(&label, "label", "", "Label to use for newly created key/certificate")
 	flag.StringVar(&id, "id", "", "Key/Certificate ID")
@@ -48,6 +52,18 @@ func main() {
 		flag.CommandLine.Usage()
 		os.Exit(1)
 	}
+
+	if configFile != "" {
+		fmt.Println("Reading config file...")
+		cfg, err := kmip.ParseConfig(configFile)
+		if err != nil {
+			fmt.Printf("ERR: Failed to read configuration from '%s': %v\n", configFile, err)
+			return
+		}
+		kmipCfg = *cfg
+	}
+
+	fmt.Printf("Cfg: %+v\n", kmipCfg)
 
 	kmipCfg.Username = os.Getenv("KMIP_USERNAME")
 	kmipCfg.Password = os.Getenv("KMIP_PASSWORD")
