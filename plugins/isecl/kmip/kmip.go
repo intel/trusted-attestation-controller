@@ -57,14 +57,17 @@ func NewClientConfig() *ClientConfig {
 
 type Client struct {
 	kmipclient.KmipClient
+	cfg ClientConfig
 	log logr.Logger
 }
 
 func NewClient(config *ClientConfig) (*Client, error) {
 	c := &Client{
 		log:        klogr.New().WithName("kmip"),
+		cfg:        config,
 		KmipClient: kmipclient.NewKmipClient(),
 	}
+
 	username, err := base64.StdEncoding.DecodeString(config.Username)
 	if err != nil {
 		return nil, fmt.Errorf("invalid username: %v", err)
@@ -126,8 +129,19 @@ func (c *Client) RegisterCertificate(pemCert string, label string) (string, erro
 			CertificateType:  kmip14.CertificateTypeX_509,
 			CertificateValue: blk.Bytes,
 		},
-		Attributes: ttlv.NewStruct(kmip20.TagAttributes,
-			ttlv.NewValue(kmip14.TagName, kmip.Name{NameType: kmip14.NameTypeUninterpretedTextString, NameValue: label})),
+	}
+	if c.cfg.KmipVersion == constants.KMIP_2_0 {
+		payload.Attributes = ttlv.NewStruct(kmip20.TagAttributes,
+			ttlv.NewValue(kmip14.TagName, kmip.Name{NameType: kmip14.NameTypeUninterpretedTextString, NameValue: label}))
+	} else {
+		payload.TemplateAttribute = []kmip.TemplateAttribute{
+			{
+				Attribute: []kmip.Attribute{
+					kmip.NewAttributeFromTag(kmip14.TagName, 0,
+						&kmip.Name{NameType: kmip14.NameTypeUninterpretedTextString, NameValue: label}),
+				},
+			},
+		}
 	}
 	batchItem, decoder, err := c.SendRequest(payload, kmip14.OperationRegister)
 	if err != nil {
@@ -158,6 +172,7 @@ func (c *Client) GetCertificate(id string) (*x509.Certificate, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to decode get certificate response payload")
 	}
+	c.log.Info("GetCertificate", "response", respPayload)
 	cert, err := x509.ParseCertificate(respPayload.Certificate.CertificateValue)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to decode certificate block")
@@ -165,38 +180,82 @@ func (c *Client) GetCertificate(id string) (*x509.Certificate, error) {
 	return cert, nil
 }
 
-func (c *Client) GetCertificateName(id string) (string, error) {
+func (c *Client) getAttributes(id string, attrNames []string) (*ttlv.Decoder, *GetAttributesResponsePayload, error) {
+	attrTag := kmip14.TagAttributeName
+	if c.cfg.KmipVersion == constants.KMIP_2_0 {
+		attrTag = kmip20.TagAttributeReference
+	}
 	requestPayLoad := GetAttributesRequestPayload{
 		UniqueIdentifier: kmip20.UniqueIdentifierValue{Text: id},
-		Attributes: ttlv.Values{
-			ttlv.NewValue(kmip20.TagAttributeReference, "Name"),
-			ttlv.NewValue(kmip20.TagAttributeReference, "Object Type"),
-		},
+		Attributes:       ttlv.Values{},
 	}
+	for _, attrName := range attrNames {
+		requestPayLoad.Attributes = append(requestPayLoad.Attributes,
+			ttlv.NewValue(attrTag, attrName))
+	}
+	c.log.Info("Get Attributes", "for", id)
 
 	batchItem, decoder, err := c.SendRequest(requestPayLoad, kmip14.OperationGetAttributes)
 	if err != nil {
-		return "", errors.Wrap(err, "failed to perform get attributes operation")
+		return nil, nil, errors.Wrap(err, "failed to perform get attributes operation")
 	}
-
-	respPayload := GetAttributesResponsePayload{}
-	if err := decoder.DecodeValue(&respPayload, batchItem.ResponsePayload.(ttlv.TTLV)); err != nil {
-		return "", errors.Wrap(err, "failed to decode get attributes response payload")
+	respAttrs := GetAttributesResponsePayload{}
+	if err := decoder.DecodeValue(&respAttrs, batchItem.ResponsePayload.(ttlv.TTLV)); err != nil {
+		return nil, nil, err
 	}
-
-	if respPayload.Attributes.ObjectType != kmip20.ObjectTypeCertificate {
-		return "", fmt.Errorf("unexpected object type: %v", respPayload.Attributes.ObjectType)
-	}
-	return respPayload.Attributes.Name.NameValue, nil
+	c.log.Info("Get Attributes", "for", id, "resp", respAttrs)
+	return decoder, &respAttrs, err
 }
 
-func (c *Client) LocateCertificateIDs() ([]string, error) {
-	requestPayLoad := LocateRequestPayload{
-		Attributes: ttlv.NewValue(kmip20.TagAttributes, Attribute{
-			ObjectType: "Certificate",
-		}),
+func (c *Client) GetObjectName(id string) (string, error) {
+	decoder, respAttrs, err := c.getAttributes(id, []string{"Name"})
+	if err != nil {
+		return "", err
 	}
 
+	if c.cfg.KmipVersion == constants.KMIP_2_0 {
+		return respAttrs.Attributes.Name.NameValue, nil
+	} else {
+		for _, attr := range respAttrs.Attribute {
+			if attr.AttributeName == "Name" {
+				var nameVal kmip.Name
+				err := decoder.DecodeValue(&nameVal, attr.AttributeValue.(ttlv.TTLV))
+				if err != nil {
+					return "", fmt.Errorf("failed to decode name value: %v", err)
+				}
+				return nameVal.NameValue, nil
+			}
+		}
+		return "", nil
+	}
+}
+
+func (c *Client) Locate(objectType kmip14.ObjectType, name string) ([]string, error) {
+	requestPayLoad := LocateRequestPayload{}
+	kmipName := kmip.Name{NameType: kmip14.NameTypeUninterpretedTextString, NameValue: name}
+	if c.cfg.KmipVersion == constants.KMIP_2_0 {
+		attrs := LocateAttributes{}
+		if objectType != 0 {
+			strObjectType, ok := kmip14.ObjectTypeEnum.CanonicalName(uint32(objectType))
+			if !ok {
+				return nil, fmt.Errorf("unknown object type %q", objectType)
+			}
+			attrs.ObjectType = strObjectType
+		}
+		if name != "" {
+			attrs.Name = &kmipName
+		}
+		requestPayLoad.Attributes = ttlv.NewValue(kmip20.TagAttributes, attrs)
+	} else {
+		attrs := []kmip.Attribute{}
+		if objectType != 0 {
+			attrs = append(attrs, kmip.NewAttributeFromTag(kmip14.TagObjectType, 0, objectType))
+		}
+		if name != "" {
+			attrs = append(attrs, kmip.NewAttributeFromTag(kmip14.TagName, 0, &kmipName))
+		}
+		requestPayLoad.Attribute = attrs
+	}
 	batchItem, decoder, err := c.SendRequest(requestPayLoad, kmip14.OperationLocate)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to perform locate operation")
@@ -210,20 +269,21 @@ func (c *Client) LocateCertificateIDs() ([]string, error) {
 	return respPayload.UniqueIdentifier, nil
 }
 
-func (c *Client) GetCertificateNameAndIDs() ([]CertInfo, error) {
-	ids, err := c.LocateCertificateIDs()
+func (c *Client) GetObjects(objType kmip14.ObjectType, objName string) ([]ObjectInfo, error) {
+	ids, err := c.Locate(objType, objName)
 	if err != nil {
 		return nil, err
 	}
-	certs := []CertInfo{}
+	objs := []ObjectInfo{}
 	for _, id := range ids {
-		name, err := c.GetCertificateName(id)
+		name, err := c.GetObjectName(id)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get certificate name for '%s': %v", id, err)
+			return objs, fmt.Errorf("failed to get key info for '%s': %v", id, err)
 		}
-		certs = append(certs, CertInfo{ID: id, Label: name})
+		c.log.Info("ObjectName", "name", name)
+		objs = append(objs, ObjectInfo{ID: id, Type: objType.String(), Label: name})
 	}
-	return certs, nil
+	return objs, nil
 }
 
 func (c *Client) DeleteCertificate(id string) error {
@@ -297,15 +357,33 @@ func (c *Client) RegisterKey(pemKey string, algorithm string, keyLen int, label 
 		ObjectType: kmip20.ObjectTypePrivateKey,
 		PrivateKey: &kmip.PrivateKey{
 			KeyBlock: kmip.KeyBlock{
-				KeyValue:               blk.Bytes,
-				KeyFormatType:          kmip14.KeyFormatTypeRaw,
+				KeyValue: kmip.KeyValue{
+					KeyMaterial: blk.Bytes,
+				},
+				KeyFormatType:          kmip14.KeyFormatTypePKCS_8,
 				CryptographicAlgorithm: cryptoAlgo,
 				CryptographicLength:    keyLen,
 			},
 		},
-		Attributes: ttlv.NewStruct(kmip20.TagAttributes,
-			ttlv.NewValue(kmip14.TagName, kmip.Name{NameType: kmip14.NameTypeUninterpretedTextString, NameValue: label})),
 	}
+	if c.cfg.KmipVersion == constants.KMIP_2_0 {
+		payload.Attributes = ttlv.NewStruct(kmip20.TagAttributes,
+			ttlv.NewValue(kmip14.TagName, kmip.Name{NameType: kmip14.NameTypeUninterpretedTextString, NameValue: label}),
+			ttlv.NewValue(kmip14.TagCryptographicUsageMask, kmip14.CryptographicUsageMaskCertificateSign),
+		)
+	} else {
+		payload.TemplateAttribute = []kmip.TemplateAttribute{
+			{
+				Attribute: []kmip.Attribute{
+					kmip.NewAttributeFromTag(kmip14.TagName, 0,
+						&kmip.Name{NameType: kmip14.NameTypeUninterpretedTextString, NameValue: label}),
+					kmip.NewAttributeFromTag(kmip14.TagCryptographicUsageMask, 0, kmip14.CryptographicUsageMaskCertificateSign),
+				},
+			},
+		}
+	}
+
+	c.log.Info("Register", "requestPayload", payload)
 	batchItem, decoder, err := c.SendRequest(payload, kmip14.OperationRegister)
 	if err != nil {
 		return "", fmt.Errorf("failed to perform register the key: %v", err)

@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/gemalto/kmip-go/kmip14"
 	"github.com/go-logr/logr"
 	"github.com/intel/trusted-attestation-controller/pkg/httpclient"
 	"github.com/intel/trusted-attestation-controller/pkg/plugin"
@@ -128,9 +129,11 @@ func (km *iSeclPlugin) initialize() error {
 		km.config.Signers[key.Label] = caInfo
 	}
 
-	certs, err := km.kmipClient.GetCertificateNameAndIDs()
+	certs, err := km.kmipClient.GetObjects(kmip14.ObjectTypeCertificate, "")
 	if err != nil {
-		return fmt.Errorf("failed to get existing certificate info: %v", err)
+		//return fmt.Errorf("failed to get existing certificate info: %v", err)
+		km.log.Error(err, "failed to get existing certificate info")
+		return nil
 	}
 
 	for _, cert := range certs {
