@@ -26,9 +26,12 @@ import (
 	"github.com/gemalto/kmip-go/kmip20"
 	"github.com/gemalto/kmip-go/ttlv"
 	"github.com/go-logr/logr"
+	"github.com/intel-secl/intel-secl/v4/pkg/kbs/constants"
 	"github.com/intel-secl/intel-secl/v4/pkg/kbs/domain/models"
 	"github.com/intel-secl/intel-secl/v4/pkg/kbs/kmipclient"
+	commonLog "github.com/intel-secl/intel-secl/v4/pkg/lib/common/log"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 	"k8s.io/klog/v2/klogr"
 )
@@ -43,6 +46,7 @@ type ClientConfig struct {
 	CACertFile     string `yaml:"caCert"`
 	KeyFile        string `yaml:"clientKey"`
 	ClientCertFile string `yaml:"clientCert"`
+	LogLevel       string `default:"warn" yaml:"logLevel"`
 }
 
 func NewClientConfig() *ClientConfig {
@@ -69,6 +73,12 @@ func NewClient(config *ClientConfig) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid password: %v", err)
 	}
+	lv, err := logrus.ParseLevel(config.LogLevel)
+	if err != nil {
+		c.log.V(3).Error(err, "invalid config", "logLevel", config.LogLevel)
+		lv = logrus.WarnLevel
+	}
+	commonLog.GetDefaultLogger().Logger.SetLevel(lv)
 
 	if err := c.InitializeClient(
 		config.KmipVersion,
