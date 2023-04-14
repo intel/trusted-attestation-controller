@@ -33,7 +33,7 @@ func main() {
 	var err error
 	var client *kmip.Client
 
-	kmipCfg := kmip.ClientConfig{
+	kmipCfg := &kmip.ClientConfig{
 		KmipVersion: "1.4", // Could be configure using kmip config file
 	}
 	flag.StringVar(&configFile, "config-file", "", "kmip client configuration file")
@@ -64,7 +64,7 @@ func main() {
 			fmt.Printf("ERR: Failed to read configuration from '%s': %v\n", configFile, err)
 			return
 		}
-		kmipCfg = *cfg
+		kmipCfg = cfg
 	}
 
 	kmipCfg.Username = os.Getenv("KMIP_USERNAME")

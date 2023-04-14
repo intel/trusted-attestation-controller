@@ -57,7 +57,7 @@ func NewClientConfig() *ClientConfig {
 
 type Client struct {
 	kmipclient.KmipClient
-	cfg ClientConfig
+	cfg *ClientConfig
 	log logr.Logger
 }
 

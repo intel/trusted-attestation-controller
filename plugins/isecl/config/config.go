@@ -25,12 +25,12 @@ import (
 )
 
 type Config struct {
-	Kbs         KbsConfig         `yaml:"kbs"`
-	Sqvs        Service           `yaml:"sqvs"`
-	AuthService Service           `yaml:"aas"`
-	Kmip        kmip.ClientConfig `yaml:"kmip"`
-	Signers     map[string]CAInfo `yaml:"signers"`
-	Timeout     time.Duration     `default:"60s" yaml:"timeout"`
+	Kbs         KbsConfig          `yaml:"kbs"`
+	Sqvs        Service            `yaml:"sqvs"`
+	AuthService *Service           `yaml:"aas"`
+	Kmip        *kmip.ClientConfig `yaml:"kmip"`
+	Signers     map[string]CAInfo  `yaml:"signers"`
+	Timeout     time.Duration      `default:"60s" yaml:"timeout"`
 }
 
 func (cfg *Config) EnsureDefaults() {
@@ -43,10 +43,10 @@ func (cfg *Config) EnsureDefaults() {
 	if cfg.Sqvs.Prefix == "" {
 		cfg.Sqvs.Prefix = "/svs/v2"
 	}
-	if cfg.AuthService.Port == "" {
+	if cfg.AuthService != nil && cfg.AuthService.Port == "" {
 		cfg.AuthService.Port = "8444"
 	}
-	if cfg.AuthService.Prefix == "" {
+	if cfg.AuthService != nil && cfg.AuthService.Prefix == "" {
 		cfg.AuthService.Prefix = "/aas/v1"
 	}
 }
