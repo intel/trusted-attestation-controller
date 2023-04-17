@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/intel-secl/intel-secl/v4/pkg/lib/common/setup"
@@ -37,132 +38,148 @@ func newCmsFlags(name string, cmsCfg *config.Service) *flag.FlagSet {
 	return flags
 }
 
+type Command struct {
+	ShortHelp string
+	Execute   runFunc
+}
+
 func main() {
-	commands := map[string]runFunc{
-		"list-all": func(args []string) error {
-			commandList := []string{
-				"list-all",
-				"download-cms-ca-cert",
-				"download-cert",
-				"create-key",
-				"list-keys",
-				"delete-key",
-				"get-pub-key",
-				"hsm-transfer",
-			}
-			fmt.Printf("Available commands: %v\n", commandList)
-			return nil
-		},
-		"download-cms-ca-cert": func(args []string) error {
-			var caDir string
-			cmsCfg := &config.Service{}
-			flags := newCmsFlags("download-cms-ca-cert", cmsCfg)
-			flags.StringVar(&caDir, "ca-dir", "/etc/tac/", "Directory location to save the downloaded CMS CA certificate.")
-			flags.Parse(args)
+	commands := map[string]Command{
+		"download-cms-ca-cert": {
+			ShortHelp: "Download CA root certificate from CMS server",
+			Execute: func(args []string) error {
+				var caDir string
+				cmsCfg := &config.Service{}
+				flags := newCmsFlags("download-cms-ca-cert", cmsCfg)
+				flags.StringVar(&caDir, "ca-dir", "/etc/tac/", "Directory location to save the downloaded CMS CA certificate.")
+				flags.Parse(args)
 
-			hash := os.Getenv("CMS_CERT_HASH")
-			if hash == "" {
-				return errors.New("missing CMS CA certificate hash. Provide it via CMS_CERT_HASH environment. You can get it by running 'cms tlscertsha384'.")
-			}
-			return downloadCaCert(cmsCfg.URL(), hash, caDir)
+				hash := os.Getenv("CMS_CERT_HASH")
+				if hash == "" {
+					return errors.New("missing CMS CA certificate hash. Provide it via CMS_CERT_HASH environment. You can get it by running 'cms tlscertsha384'")
+				}
+				return downloadCaCert(cmsCfg.URL(), hash, caDir)
+			},
 		},
-		"download-cert": func(args []string) error {
-			var caDir, cn, sanList, clientKey, clientCert string
-			cmsCfg := &config.Service{}
-			flags := newCmsFlags("download-cms-ca-cert", cmsCfg)
-			flags.StringVar(&caDir, "ca-dir", "/etc/tac/", "Directory location to save the signed client certificate by CMS")
-			flags.StringVar(&clientCert, "cert-file", "", "File path to save the client certificate.")
-			flags.StringVar(&clientKey, "key-file", "", "File path to save the client private key used for signing request.")
-			flags.StringVar(&cn, "common-name", "localhost", "CommonName to use for the signing a client certificate.")
-			flags.StringVar(&sanList, "san-list", "localhost,127.0.0.1", "Subject alternative names to use for the signing a client certificate.")
-			flags.Parse(args)
+		"download-cert": {
+			ShortHelp: "Download x509 certificate signed by the CMS CA.",
+			Execute: func(args []string) error {
+				var caDir, cn, sanList, clientKey, clientCert string
+				cmsCfg := &config.Service{}
+				flags := newCmsFlags("download-cms-ca-cert", cmsCfg)
+				flags.StringVar(&caDir, "ca-dir", "/etc/tac/", "Directory location to save the signed client certificate by CMS")
+				flags.StringVar(&clientCert, "cert-file", "", "File path to save the client certificate.")
+				flags.StringVar(&clientKey, "key-file", "", "File path to save the client private key used for signing request.")
+				flags.StringVar(&cn, "common-name", "localhost", "CommonName to use for the signing a client certificate.")
+				flags.StringVar(&sanList, "san-list", "localhost,127.0.0.1", "Subject alternative names to use for the signing a client certificate.")
+				flags.Parse(args)
 
-			token := os.Getenv("BEARER_TOKEN")
-			if token == "" {
-				return errors.New("missing KBS token. Provide it via BEARER_TOKEN environment!")
-			}
-			hash := os.Getenv("CMS_CERT_HASH")
-			if hash == "" {
-				return errors.New("missing CMS CA certificate hash. Provide it via CMS_CERT_HASH environment. You can get it by running 'cms tlscertsha384'.")
-			}
-			return downloadCert(cmsCfg.URL(), token, cn, sanList, caDir, clientKey, clientCert)
+				token := os.Getenv("BEARER_TOKEN")
+				if token == "" {
+					return errors.New("missing KBS token. Provide it via BEARER_TOKEN environment")
+				}
+				hash := os.Getenv("CMS_CERT_HASH")
+				if hash == "" {
+					return errors.New("missing CMS CA certificate hash. Provide it via CMS_CERT_HASH environment. You can get it by running 'cms tlscertsha384'")
+				}
+				return downloadCert(cmsCfg.URL(), token, cn, sanList, caDir, clientKey, clientCert)
+			},
 		},
-		"create-key": func(args []string) error {
-			kbsCfg := &config.KbsConfig{}
-			var label string
-			var keyType string
-			var keyLength int
-			var keyTransferPolicy string
-			flags := newKbsFlags("create-key", kbsCfg)
-			flags.StringVar(&label, "label", "", "Label to use for newly created key")
-			flags.StringVar(&keyType, "key-type", "RSA", "Key algorithm: RSA or ECDSA. Needed for 'create-key")
-			flags.IntVar(&keyLength, "key-len", 3072, "Key length")
-			flags.StringVar(&keyTransferPolicy, "ktp-id", "", "Key transfer policy ID, to use for newly created key. Needed for 'create-key")
-			flags.Parse(args)
-			kbsCfg.EnsureDefaults()
+		"create-key": {
+			ShortHelp: "Requests KBS to create a new private key.",
+			Execute: func(args []string) error {
+				kbsCfg := &config.KbsConfig{}
+				var label string
+				var keyType string
+				var keyLength int
+				var keyTransferPolicy string
+				flags := newKbsFlags("create-key", kbsCfg)
+				flags.StringVar(&label, "label", "", "Label to use for newly created key")
+				flags.StringVar(&keyType, "key-type", "RSA", "Key algorithm: RSA or ECDSA. Needed for 'create-key")
+				flags.IntVar(&keyLength, "key-len", 3072, "Key length")
+				flags.StringVar(&keyTransferPolicy, "ktp-id", "", "Key transfer policy ID, to use for newly created key. Needed for 'create-key")
+				flags.Parse(args)
+				kbsCfg.EnsureDefaults()
 
-			if label == "" {
-				return errors.New("nil key label")
-			}
-			kbsCfg.BearerToken = os.Getenv("BEARER_TOKEN")
-			if kbsCfg.BearerToken == "" {
-				return errors.New("missing KBS token. Provide it via BEARER_TOKEN environment!")
-			}
-			return createKey(kbsCfg, keyType, keyLength, keyTransferPolicy, label)
-		},
-		"list-keys": func(args []string) error {
-			kbsCfg := &config.KbsConfig{}
-			flags := newKbsFlags("list-keys", kbsCfg)
-			flags.Parse(args)
-			kbsCfg.EnsureDefaults()
+				if label == "" {
+					return errors.New("nil key label")
+				}
+				kbsCfg.BearerToken = os.Getenv("BEARER_TOKEN")
+				if kbsCfg.BearerToken == "" {
+					return errors.New("missing KBS token. Provide it via BEARER_TOKEN environment")
+				}
+				return createKey(kbsCfg, keyType, keyLength, keyTransferPolicy, label)
+			}},
+		"list-keys": {
+			ShortHelp: "Lists all available keys at KBS.",
+			Execute: func(args []string) error {
+				kbsCfg := &config.KbsConfig{}
+				flags := newKbsFlags("list-keys", kbsCfg)
+				flags.Parse(args)
+				kbsCfg.EnsureDefaults()
 
-			kbsCfg.BearerToken = os.Getenv("BEARER_TOKEN")
-			if kbsCfg.BearerToken == "" {
-				return errors.New("missing KBS token. Provide it via BEARER_TOKEN environment!")
-			}
-			return listKeys(kbsCfg)
-		},
-		"delete-key": func(args []string) error {
-			kbsCfg := &config.KbsConfig{}
-			var id string
-			flags := newKbsFlags("delete-key", kbsCfg)
-			flags.StringVar(&id, "id", "", "Key ID to delete")
-			flags.Parse(args)
-			kbsCfg.EnsureDefaults()
-			if id == "" {
-				return errors.New("nil key id")
-			}
-			kbsCfg.BearerToken = os.Getenv("BEARER_TOKEN")
-			if kbsCfg.BearerToken == "" {
-				return errors.New("missing KBS token. Provide it via BEARER_TOKEN environment!")
-			}
-			return deleteKey(kbsCfg, id)
-		},
-		"hsm-transfer": func(args []string) error {
-			kbsCfg := &config.KbsConfig{}
-			var id string
-			flags := newKbsFlags("list-keys", kbsCfg)
-			flags.StringVar(&id, "id", "", "Key ID to retrieve")
-			flags.Parse(args)
-			kbsCfg.EnsureDefaults()
-			kbsCfg.BearerToken = os.Getenv("BEARER_TOKEN")
-			if kbsCfg.BearerToken == "" {
-				return errors.New("missing KBS token. Provide it via BEARER_TOKEN environment!")
-			}
-			return transferKey(kbsCfg, id)
+				kbsCfg.BearerToken = os.Getenv("BEARER_TOKEN")
+				if kbsCfg.BearerToken == "" {
+					return errors.New("missing KBS token. Provide it via BEARER_TOKEN environment")
+				}
+				return listKeys(kbsCfg)
+			}},
+		"delete-key": {
+			ShortHelp: "Deletes a key stored in the KBS key server.",
+			Execute: func(args []string) error {
+				kbsCfg := &config.KbsConfig{}
+				var id string
+				flags := newKbsFlags("delete-key", kbsCfg)
+				flags.StringVar(&id, "id", "", "Key ID to delete")
+				flags.Parse(args)
+				kbsCfg.EnsureDefaults()
+				if id == "" {
+					return errors.New("nil key id")
+				}
+				kbsCfg.BearerToken = os.Getenv("BEARER_TOKEN")
+				if kbsCfg.BearerToken == "" {
+					return errors.New("missing KBS token. Provide it via BEARER_TOKEN environment")
+				}
+				return deleteKey(kbsCfg, id)
+			}},
+		"hsm-transfer": {
+			ShortHelp: "Retrieve the wrapped private key from KBS.",
+			Execute: func(args []string) error {
+				kbsCfg := &config.KbsConfig{}
+				var id string
+				flags := newKbsFlags("list-keys", kbsCfg)
+				flags.StringVar(&id, "id", "", "Key ID to retrieve")
+				flags.Parse(args)
+				kbsCfg.EnsureDefaults()
+				kbsCfg.BearerToken = os.Getenv("BEARER_TOKEN")
+				if kbsCfg.BearerToken == "" {
+					return errors.New("missing KBS token. Provide it via BEARER_TOKEN environment")
+				}
+				return transferKey(kbsCfg, id)
+			},
 		},
 	}
+
+	flag.Usage = func() {
+		helpStr := strings.Builder{}
+		helpStr.WriteString("Available commands:\n")
+		for name, cmd := range commands {
+			helpStr.WriteString(fmt.Sprintf("    %s\n\t%s\n", name, cmd.ShortHelp))
+		}
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage of %s <<command>>:\n\n%s", os.Args[0], helpStr.String())
+	}
+	flag.Parse()
 
 	if len(os.Args) < 2 {
 		os.Args = append(os.Args, "list-all")
 	}
 
-	run, ok := commands[os.Args[1]]
+	cmd, ok := commands[os.Args[1]]
 	if !ok {
 		fmt.Fprintf(os.Stderr, "ERR: Unknown command '%s'", os.Args[1])
 		return
 	}
-	if err := run(os.Args[2:]); err != nil {
+	if err := cmd.Execute(os.Args[2:]); err != nil {
 		fmt.Fprintf(os.Stderr, "ERR: failed to execute: %v", err)
 	}
 }
