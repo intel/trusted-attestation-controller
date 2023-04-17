@@ -2,35 +2,65 @@ name: Security Scanning
 
 on:
   push:
-    branches: [ main, 'release-*' ]
+    branches: [ main ]
     tags: [ '*' ]
   pull_request:
     branches: [ main ]
 
 jobs:
-  snyk:
+  snyk-scanning:
     runs-on: ubuntu-latest
     environment:
       name: dev
       url: https://github.com
 
-    steps:    
+    steps:
     - name: Checkout
       uses: actions/checkout@master
 
     - name: Set Up Snyk
       uses: snyk/actions/setup@master
+      
+    - name: Snyk Auth
+      run: |
+        echo ${{ secrets.SNYK_TOKEN }}
+        snyk auth ${{ secrets.SNYK_TOKEN }}
 
     - name: Run Snyk to check for vulnerabilities
       continue-on-error: true
       uses: snyk/actions/golang@master
       env:
-        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-      with:   
-        json: true
-        args: --sarif-file-output=snyk.json
-        
+        SNYK_TOKEN: ${{ env.SNYK_TOKEN }}
+      with:
+        args: --sarif-file-output=/github/workspace/snyk.sarif
+
     - name: Upload result to GitHub Code Scanning
+      if: ${{ github.event_name != 'pull_request' }}
       uses: github/codeql-action/upload-sarif@v2
       with:
-       sarif_file: snyk.json
+       sarif_file: /github/workspace/snyk.sarif
+
+  codeQL-scanning:
+    runs-on: ubuntu-latest
+    environment:
+      name: dev
+      url: https://github.com
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@master
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v2
+      with:
+        languages: go
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v2
+
+    - name: Upload result to GitHub Code Scanning
+      if: ${{ github.event_name != 'pull_request' }}
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+          sarif_file: codeql.sarif
+          wait-for-processing: true
