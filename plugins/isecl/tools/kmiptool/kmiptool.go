@@ -29,7 +29,7 @@ func main() {
 	var err error
 	var client *kmip.Client
 
-	kmipCfg := kmip.ClientConfig{}
+	kmipCfg := kmip.NewClientConfig()
 	flag.StringVar(&cmd, "cmd", "", fmt.Sprintf("command to execute. Supported commands: %v", cmdList))
 	flag.StringVar(&label, "label", "", "Label to use for newly created key/certificate")
 	flag.StringVar(&id, "id", "", "Key/Certificate ID")

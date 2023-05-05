@@ -45,12 +45,18 @@ type ClientConfig struct {
 	ClientCertFile string `yaml:"clientCert"`
 }
 
+func NewClientConfig() *ClientConfig {
+	cfg := &ClientConfig{}
+	defaults.Set(cfg)
+	return cfg
+}
+
 type Client struct {
 	kmipclient.KmipClient
 	log logr.Logger
 }
 
-func NewClient(config ClientConfig) (*Client, error) {
+func NewClient(config *ClientConfig) (*Client, error) {
 	c := &Client{
 		log:        klogr.New().WithName("kmip"),
 		KmipClient: kmipclient.NewKmipClient(),
@@ -85,12 +91,11 @@ func ParseConfig(confFile string) (*ClientConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read kmip client configuration '%s': %v", confFile, err)
 	}
-	cfg := ClientConfig{}
-	defaults.Set(&cfg)
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	cfg := NewClientConfig()
+	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse kmip configuration: %v", err)
 	}
-	return &cfg, nil
+	return cfg, nil
 }
 
 func (c *Client) RegisterCertificate(pemCert string, label string) (string, error) {
