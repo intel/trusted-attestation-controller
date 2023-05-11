@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/gemalto/kmip-go/kmip14"
 	"github.com/go-logr/logr"
 	"github.com/intel/trusted-attestation-controller/pkg/httpclient"
 	"github.com/intel/trusted-attestation-controller/pkg/plugin"
@@ -76,7 +77,7 @@ func NewISecLPlugin(cfg *config.Config) (plugin.KeyManagerPlugin, error) {
 		return nil, fmt.Errorf("failed to initialize KBS client: %v", err)
 	}
 
-	kmipClient, err := kmip.NewClient(&cfg.Kmip)
+	kmipClient, err := kmip.NewClient(cfg.Kmip)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize KMIP client: %v", err)
 	}
@@ -107,44 +108,6 @@ func (km *iSeclPlugin) initialize() error {
 	err = validateApiVersion(version)
 	if err != nil {
 		return fmt.Errorf("server api version validation failed: %v", err)
-	}
-
-	keys, err := km.fetchKeys()
-	if err != nil {
-		return fmt.Errorf("failed to get existing key info: %v", err)
-	}
-
-	for _, key := range keys {
-		if key.Label == "" {
-			km.log.Info("Ignoring key with no label", "ID", key.KeyInformation.ID)
-			continue
-		}
-		km.log.Info("Found signer key", "ID", key.KeyInformation.ID, "label", key.Label)
-		caInfo, ok := km.config.Signers[key.Label]
-		if !ok {
-			caInfo = config.CAInfo{}
-		}
-		caInfo.KeyID = key.KeyInformation.ID.String()
-		km.config.Signers[key.Label] = caInfo
-	}
-
-	certs, err := km.kmipClient.GetCertificateNameAndIDs()
-	if err != nil {
-		return fmt.Errorf("failed to get existing certificate info: %v", err)
-	}
-
-	for _, cert := range certs {
-		if cert.Label == "" {
-			km.log.Info("Ignoring certificate with no label", "ID", cert.ID)
-			continue
-		}
-		km.log.Info("Signer Cert", "ID", cert.ID, "label", cert.Label)
-		caInfo, ok := km.config.Signers[cert.Label]
-		if !ok {
-			caInfo = config.CAInfo{}
-		}
-		caInfo.CertID = cert.ID
-		km.config.Signers[cert.Label] = caInfo
 	}
 
 	return nil
@@ -222,10 +185,24 @@ func (km *iSeclPlugin) GetCAKeyCertificate(ctx context.Context, signerName strin
 
 	signerInfo, ok := km.config.Signers[signerName]
 	if !ok {
-		return nil, nil, fmt.Errorf("unknown signer '%s'", signerName)
+		signerInfo = config.CAInfo{}
+		km.config.Signers[signerName] = signerInfo
 	}
 	if signerInfo.KeyID == "" {
-		return nil, nil, fmt.Errorf("No key ID configured for the signer %q", signerName)
+		// Not found in the configuration, determine the key id
+		keys, err := km.fetchKeys()
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get existing key info: %v", err)
+		}
+		for _, key := range keys {
+			if key.Label == signerName {
+				signerInfo.KeyID = key.KeyInformation.ID.String()
+				break
+			}
+		}
+		if signerInfo.KeyID == "" {
+			return nil, nil, fmt.Errorf("no key found for the signer %q", signerName)
+		}
 	}
 
 	wrappedSwk, wrappedKey, err := km.getWrappedKey(signerInfo.KeyID, decodedQuote, publicKey, nonce)
@@ -234,6 +211,26 @@ func (km *iSeclPlugin) GetCAKeyCertificate(ctx context.Context, signerName strin
 	}
 	km.log.Info("WrappedKey", "len", len(wrappedKey))
 	keyData := append(wrappedSwk, wrappedKey...)
+	encodedKey := []byte(base64.StdEncoding.EncodeToString(keyData))
+
+	if km.kmipClient == nil {
+		// if no KMIP client, just ignore certificate fetching
+		return encodedKey, nil, nil
+	}
+
+	if signerInfo.CertID == "" {
+		// No configuration entry found for the signer certificate
+		certs, err := km.kmipClient.GetObjects(kmip14.ObjectTypeCertificate, signerName)
+		if err != nil {
+			//return fmt.Errorf("failed to get existing certificate info: %v", err)
+			km.log.Error(err, "failed to get existing certificate info")
+			return encodedKey, nil, nil
+		}
+		if len(certs) > 1 {
+			km.log.Info("found multiple certificate objects", "signer", signerName)
+		}
+		signerInfo.CertID = certs[0].ID
+	}
 
 	cert, err := km.kmipClient.GetCertificate(signerInfo.CertID)
 	if err != nil {
@@ -245,7 +242,7 @@ func (km *iSeclPlugin) GetCAKeyCertificate(ctx context.Context, signerName strin
 		Bytes: cert.Raw,
 	})
 
-	return []byte(base64.StdEncoding.EncodeToString(keyData)), []byte(base64.StdEncoding.EncodeToString(pemCert)), nil
+	return encodedKey, []byte(base64.StdEncoding.EncodeToString(pemCert)), nil
 }
 
 func (km *iSeclPlugin) initiateKeyTransfer(keyID string, sessionID string) ([]byte, int, error) {

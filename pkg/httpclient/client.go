@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -44,32 +45,39 @@ type kmClient struct {
 }
 
 func NewHttpClient(cfg *Config) (HttpClient, error) {
-	if cfg == nil {
-		cfg = &Config{}
+	if cfg == nil || cfg.CACertFile == "" || cfg.KeyFile == "" || cfg.ClientCertFile == "" {
+		return nil, errors.New("invalid tls client configuration")
 	}
-	tlsConfig := tls.Config{}
-	if cfg.CACertFile == "" && cfg.KeyFile == "" && cfg.ClientCertFile == "" {
-		tlsConfig.InsecureSkipVerify = true
-	} else {
-		cert, err := tls.LoadX509KeyPair(cfg.ClientCertFile, cfg.KeyFile)
-		if err != nil {
-			return nil, fmt.Errorf("failed creating x509 key pair: %v", err)
-		}
-		caCert, err := ioutil.ReadFile(cfg.CACertFile)
-		if err != nil {
-			return nil, fmt.Errorf("failed opening ca cert `%s`, error: %v", caCert, err)
-		}
-		caCertPool := x509.NewCertPool()
-		caCertPool.AppendCertsFromPEM(caCert)
+	cert, err := tls.LoadX509KeyPair(cfg.ClientCertFile, cfg.KeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed creating x509 key pair: %v", err)
+	}
+	caCert, err := ioutil.ReadFile(cfg.CACertFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed opening ca cert `%s`, error: %v", caCert, err)
+	}
+	caCertPool := x509.NewCertPool()
+	caCertPool.AppendCertsFromPEM(caCert)
 
-		tlsConfig.Certificates = []tls.Certificate{cert}
-		tlsConfig.RootCAs = caCertPool
-	}
 	transport := &http.Transport{
-		TLSClientConfig: &tlsConfig,
+		TLSClientConfig: &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			RootCAs:      caCertPool,
+		},
 	}
 
 	return &kmClient{&http.Client{Transport: transport, Timeout: cfg.RequestTimeout}}, nil
+}
+
+func NewHttpClientInsecure(requestTimeout time.Duration) (HttpClient, error) {
+	return &kmClient{&http.Client{
+		Timeout: requestTimeout,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		},
+	}}, nil
 }
 
 func (c *kmClient) Get(url string, headers map[string]string) ([]byte, int, error) {

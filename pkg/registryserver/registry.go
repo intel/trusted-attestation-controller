@@ -29,6 +29,7 @@ import (
 
 type PluginRegistry struct {
 	*grpcserver.GrpcServer
+	pluginapi.UnimplementedRegistryServer
 	log     logr.Logger
 	plugins map[string]*keyServer
 	lock    sync.Mutex

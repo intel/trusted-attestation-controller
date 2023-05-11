@@ -19,7 +19,7 @@ endif
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
-all: build $(PLUGINS)
+all: build
 
 ##@ General
 
@@ -45,16 +45,28 @@ manifests: vendor controller-gen ## Generate ClusterRole objects.
 generate: vendor controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
- # latest protoc releae as of 03.03.2020
-PROTOC_VERSION=3.19.4
-generate-proto: bin/protoc-v${PROTOC_VERSION}
-	$< --go_out=plugins=grpc,paths=source_relative:. ./pkg/api/v1alpha1/pluginapi.proto
+PROTOC_VERSION=22.2
+generate-proto: pkg/api/v1alpha1/pluginapi.proto ## Generate plugin API protobuf Go defintions.
+generate-proto: bin/protoc-v${PROTOC_VERSION} protoc-gen-go-grpc
+	$< --go_out=paths=source_relative:. --plugin=$(shell pwd)/bin/protoc-gen-go \
+	   --go-grpc_out=paths=source_relative:. --plugin=$(shell pwd)/bin/protoc-gen-go-grpc \
+	   pkg/api/v1alpha1/pluginapi.proto
 
 bin/protoc-v${PROTOC_VERSION}: bin/protoc-${PROTOC_VERSION}-linux-x86_64.zip
 	unzip -p $< bin/protoc > $@ && chmod +x $@
 
 bin/protoc-${PROTOC_VERSION}-linux-x86_64.zip:
 	wget https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip -P bin/
+
+PROTOC_GEN_GO_VERSION=1.30.0
+PROTOC_GEN_GO = bin/protoc-gen-go
+protoc-gen-go:
+	$(call go-get-tool,$(PROTOC_GEN_GO),google.golang.org/protobuf/cmd/protoc-gen-go@v$(PROTOC_GEN_GO_VERSION))
+
+PROTOC_GEN_GO_GRPC_VERSION=1.3.0
+PROTOC_GEN_GO_GRPC = bin/protoc-gen-go-grpc
+protoc-gen-go-grpc:
+	$(call go-get-tool,$(PROTOC_GEN_GO_GRPC),google.golang.org/grpc/cmd/protoc-gen-go-grpc@v$(PROTOC_GEN_GO_GRPC_VERSION))
 
 vendor:
 	go mod tidy
@@ -74,12 +86,14 @@ test: manifests generate fmt vet ## Run tests.
 
 ##@ Build
 
-build: vendor generate fmt vet ## Build manager binary.
-	go build -o bin/manager main.go
+build: vendor generate fmt vet manager $(PLUGINS)
 
-$(PLUGINS): generate-proto fmt vet ## Build plugin binaries.
-	go build -o bin/$@-plugin ./plugins/$@/main.go
+manager: ## Build manager binary.
+	go build -buildmode=pie -o bin/manager main.go
 
+plugins: $(PLUGINS) ## Build plugin binaries.
+$(PLUGINS): generate-proto
+	go build -buildmode=pie -o bin/$@-plugin ./plugins/$@/main.go
 
 # additional arguments to pass to 'docker build'
 DOCKER_BUILD_ARGS ?=
@@ -124,13 +138,15 @@ ifeq ("$(VERSION)", "")
 endif
 	./hack/prepare-release-branch.sh --version $(VERSION)
 
+CONTROLLER_GEN_VERSION=0.10.0
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
 controller-gen: ## Download controller-gen locally if necessary.
-	$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.10.0)
+	$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v$(CONTROLLER_GEN_VERSION))
 
+KUSTOMIZE_VERSION=5.0.1
 KUSTOMIZE = $(shell pwd)/bin/kustomize
 kustomize: ## Download kustomize locally if necessary.
-	$(call go-get-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v4@v4.5.7)
+	$(call go-get-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v5@v$(KUSTOMIZE_VERSION))
 
 # go-get-tool will 'go get' any package $2 and install it to $1.
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
@@ -146,4 +162,4 @@ rm -rf $$TMP_DIR ;\
 }
 endef
 
-.PHONY : .deploy
+.PHONY : .deploy vendor

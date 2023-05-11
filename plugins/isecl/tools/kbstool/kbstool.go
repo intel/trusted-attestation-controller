@@ -9,160 +9,183 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
+	"github.com/creasty/defaults"
 	"github.com/intel-secl/intel-secl/v4/pkg/lib/common/setup"
 	"github.com/intel-secl/intel-secl/v4/pkg/model/kbs"
 	"github.com/intel/trusted-attestation-controller/pkg/httpclient"
 	"github.com/intel/trusted-attestation-controller/plugins/isecl/config"
+	"gopkg.in/yaml.v2"
 )
 
 type runFunc func(args []string) error
 
-func newKbsFlags(name string, kbsCfg *config.KbsConfig) *flag.FlagSet {
+var configFile string
+
+func newKbsFlags(name string) *flag.FlagSet {
 	flags := flag.NewFlagSet(os.Args[0]+" "+name, flag.ExitOnError)
-	flags.StringVar(&kbsCfg.Host, "kbs-host", "localhost", "Hostname of the KBS server to connect")
-	flags.StringVar(&kbsCfg.Port, "kbs-port", "9443", "Port number of the KBS server")
-	flags.StringVar(&kbsCfg.CaCert, "ca-cert", "", "CA root certificate")
-	flags.StringVar(&kbsCfg.ClientCert, "cert-file", "", "Location of the KBC client certificate to store/load. Used by 'download-cert'")
-	flags.StringVar(&kbsCfg.ClientCert, "key-file", "", "Location of the client private key to load for signing")
+	flags.StringVar(&configFile, "config-file", "", "File holding the KBS configuration in yaml format")
 	return flags
 }
 
 func newCmsFlags(name string, cmsCfg *config.Service) *flag.FlagSet {
+	cmsCfg.Proto = "https"
 	cmsCfg.Prefix = "/cms/v1"
 	flags := flag.NewFlagSet(os.Args[0]+" "+name, flag.ExitOnError)
 	flags.StringVar(&cmsCfg.Host, "cms-host", "localhost", "Hostname of the CMS server to fetch certificates")
 	flags.StringVar(&cmsCfg.Port, "cms-port", "8445", "Port number of the CMS server")
+
 	return flags
 }
 
+type Command struct {
+	ShortHelp string
+	Execute   runFunc
+}
+
 func main() {
-	commands := map[string]runFunc{
-		"list-all": func(args []string) error {
-			commandList := []string{
-				"list-all",
-				"download-cms-ca-cert",
-				"download-cert",
-				"create-key",
-				"list-keys",
-				"delete-key",
-				"get-pub-key",
-				"hsm-transfer",
-			}
-			fmt.Printf("Available commands: %v\n", commandList)
-			return nil
-		},
-		"download-cms-ca-cert": func(args []string) error {
-			var caDir string
-			cmsCfg := &config.Service{}
-			flags := newCmsFlags("download-cms-ca-cert", cmsCfg)
-			flags.StringVar(&caDir, "ca-dir", "/etc/tac/", "Directory location to save the downloaded CMS CA certificate.")
-			flags.Parse(args)
+	commands := map[string]Command{
+		"download-cms-ca-cert": {
+			ShortHelp: "Download CA root certificate from CMS server",
+			Execute: func(args []string) error {
+				var caDir string
+				cmsCfg := &config.Service{}
+				flags := newCmsFlags("download-cms-ca-cert", cmsCfg)
+				flags.StringVar(&caDir, "ca-dir", "/etc/tac/", "Directory location to save the downloaded CMS CA certificate.")
+				flags.Parse(args)
 
-			hash := os.Getenv("CMS_CERT_HASH")
-			if hash == "" {
-				return errors.New("missing CMS CA certificate hash. Provide it via CMS_CERT_HASH environment. You can get it by running 'cms tlscertsha384'.")
-			}
-			return downloadCaCert(cmsCfg.URL(), hash, caDir)
+				hash := os.Getenv("CMS_CERT_HASH")
+				if hash == "" {
+					return errors.New("missing CMS CA certificate hash. Provide it via CMS_CERT_HASH environment. You can get it by running 'cms tlscertsha384'")
+				}
+				return downloadCaCert(cmsCfg.URL(), hash, caDir)
+			},
 		},
-		"download-cert": func(args []string) error {
-			var caDir, cn, sanList, clientKey, clientCert string
-			cmsCfg := &config.Service{}
-			flags := newCmsFlags("download-cms-ca-cert", cmsCfg)
-			flags.StringVar(&caDir, "ca-dir", "/etc/tac/", "Directory location to save the signed client certificate by CMS")
-			flags.StringVar(&clientCert, "cert-file", "", "File path to save the client certificate.")
-			flags.StringVar(&clientKey, "key-file", "", "File path to save the client private key used for signing request.")
-			flags.StringVar(&cn, "common-name", "localhost", "CommonName to use for the signing a client certificate.")
-			flags.StringVar(&sanList, "san-list", "localhost,127.0.0.1", "Subject alternative names to use for the signing a client certificate.")
-			flags.Parse(args)
+		"download-cert": {
+			ShortHelp: "Download x509 certificate signed by the CMS CA.",
+			Execute: func(args []string) error {
+				var caDir, cn, sanList, clientKey, clientCert string
+				cmsCfg := &config.Service{}
+				flags := newCmsFlags("download-cert", cmsCfg)
+				flags.StringVar(&caDir, "ca-dir", "/etc/tac/", "Directory location to save the signed client certificate by CMS")
+				flags.StringVar(&clientCert, "cert-file", "", "File path to save the client certificate.")
+				flags.StringVar(&clientKey, "key-file", "", "File path to save the client private key used for signing request.")
+				flags.StringVar(&cn, "common-name", "localhost", "CommonName to use for the signing a client certificate.")
+				flags.StringVar(&sanList, "san-list", "localhost,127.0.0.1", "Subject alternative names to use for the signing a client certificate.")
+				flags.Parse(args)
 
-			token := os.Getenv("BEARER_TOKEN")
-			if token == "" {
-				return errors.New("missing KBS token. Provide it via BEARER_TOKEN environment!")
-			}
-			hash := os.Getenv("CMS_CERT_HASH")
-			if hash == "" {
-				return errors.New("missing CMS CA certificate hash. Provide it via CMS_CERT_HASH environment. You can get it by running 'cms tlscertsha384'.")
-			}
-			return downloadCert(cmsCfg.URL(), token, cn, sanList, caDir, clientKey, clientCert)
+				token := os.Getenv("BEARER_TOKEN")
+				if token == "" {
+					return errors.New("missing KBS token. Provide it via BEARER_TOKEN environment")
+				}
+				hash := os.Getenv("CMS_CERT_HASH")
+				if hash == "" {
+					return errors.New("missing CMS CA certificate hash. Provide it via CMS_CERT_HASH environment. You can get it by running 'cms tlscertsha384'")
+				}
+				return downloadCert(cmsCfg.URL(), token, cn, sanList, caDir, clientKey, clientCert)
+			},
 		},
-		"create-key": func(args []string) error {
-			kbsCfg := &config.KbsConfig{}
-			var label string
-			var keyType string
-			var keyLength int
-			var keyTransferPolicy string
-			flags := newKbsFlags("create-key", kbsCfg)
-			flags.StringVar(&label, "label", "", "Label to use for newly created key")
-			flags.StringVar(&keyType, "key-type", "RSA", "Key algorithm: RSA or ECDSA. Needed for 'create-key")
-			flags.IntVar(&keyLength, "key-len", 3072, "Key length")
-			flags.StringVar(&keyTransferPolicy, "ktp-id", "", "Key transfer policy ID, to use for newly created key. Needed for 'create-key")
-			flags.Parse(args)
-			kbsCfg.EnsureDefaults()
+		"create-key": {
+			ShortHelp: "Requests KBS to create a new private key.",
+			Execute: func(args []string) error {
+				var label string
+				var keyType string
+				var keyLength int
+				var keyTransferPolicy string
+				flags := newKbsFlags("create-key")
+				flags.StringVar(&label, "label", "", "Label to use for newly created key")
+				flags.StringVar(&keyType, "key-type", "RSA", "Key algorithm: RSA or ECDSA. Needed for 'create-key")
+				flags.IntVar(&keyLength, "key-len", 3072, "Key length")
+				flags.StringVar(&keyTransferPolicy, "ktp-id", "", "Key transfer policy ID, to use for newly created key. Needed for 'create-key")
+				flags.Parse(args)
 
-			if label == "" {
-				return errors.New("nil key label")
-			}
-			kbsCfg.BearerToken = os.Getenv("BEARER_TOKEN")
-			if kbsCfg.BearerToken == "" {
-				return errors.New("missing KBS token. Provide it via BEARER_TOKEN environment!")
-			}
-			return createKey(kbsCfg, keyType, keyLength, keyTransferPolicy, label)
-		},
-		"list-keys": func(args []string) error {
-			kbsCfg := &config.KbsConfig{}
-			flags := newKbsFlags("list-keys", kbsCfg)
-			flags.Parse(args)
-			kbsCfg.EnsureDefaults()
+				kbsCfg, err := parseConfigFile(configFile)
+				if err != nil {
+					return err
+				}
 
-			kbsCfg.BearerToken = os.Getenv("BEARER_TOKEN")
-			if kbsCfg.BearerToken == "" {
-				return errors.New("missing KBS token. Provide it via BEARER_TOKEN environment!")
-			}
-			return listKeys(kbsCfg)
-		},
-		"delete-key": func(args []string) error {
-			kbsCfg := &config.KbsConfig{}
-			var id string
-			flags := newKbsFlags("delete-key", kbsCfg)
-			flags.StringVar(&id, "id", "", "Key ID to delete")
-			flags.Parse(args)
-			kbsCfg.EnsureDefaults()
-			if id == "" {
-				return errors.New("nil key id")
-			}
-			kbsCfg.BearerToken = os.Getenv("BEARER_TOKEN")
-			if kbsCfg.BearerToken == "" {
-				return errors.New("missing KBS token. Provide it via BEARER_TOKEN environment!")
-			}
-			return deleteKey(kbsCfg, id)
-		},
-		"hsm-transfer": func(args []string) error {
-			kbsCfg := &config.KbsConfig{}
-			var id string
-			flags := newKbsFlags("list-keys", kbsCfg)
-			flags.StringVar(&id, "id", "", "Key ID to retrieve")
-			flags.Parse(args)
-			kbsCfg.EnsureDefaults()
-			kbsCfg.BearerToken = os.Getenv("BEARER_TOKEN")
-			if kbsCfg.BearerToken == "" {
-				return errors.New("missing KBS token. Provide it via BEARER_TOKEN environment!")
-			}
-			return transferKey(kbsCfg, id)
+				if label == "" {
+					return errors.New("nil key label")
+				}
+				if kbsCfg.BearerToken == "" {
+					return errors.New("missing KBS token. Provide it via BEARER_TOKEN environment")
+				}
+				return createKey(kbsCfg, keyType, keyLength, keyTransferPolicy, label)
+			}},
+		"list-keys": {
+			ShortHelp: "Lists all available keys at KBS.",
+			Execute: func(args []string) error {
+				flags := newKbsFlags("list-keys")
+				flags.Parse(args)
+				kbsCfg, err := parseConfigFile(configFile)
+				if err != nil {
+					return err
+				}
+				if kbsCfg.BearerToken == "" {
+					return errors.New("missing KBS token. Provide it via BEARER_TOKEN environment")
+				}
+				return listKeys(kbsCfg)
+			}},
+		"delete-key": {
+			ShortHelp: "Deletes a key stored in the KBS key server.",
+			Execute: func(args []string) error {
+				var id string
+				flags := newKbsFlags("delete-key")
+				flags.StringVar(&id, "id", "", "Key ID to delete")
+				flags.Parse(args)
+				kbsCfg, err := parseConfigFile(configFile)
+				if err != nil {
+					return err
+				}
+				if id == "" {
+					return errors.New("nil key id")
+				}
+				if kbsCfg.BearerToken == "" {
+					return errors.New("missing KBS token. Provide it via BEARER_TOKEN environment")
+				}
+				return deleteKey(kbsCfg, id)
+			}},
+		"hsm-transfer": {
+			ShortHelp: "Retrieve the wrapped private key from KBS.",
+			Execute: func(args []string) error {
+				var id string
+				flags := newKbsFlags("hsm-transfer")
+				flags.StringVar(&id, "id", "", "Key ID to retrieve")
+				flags.Parse(args)
+				kbsCfg, err := parseConfigFile(configFile)
+				if err != nil {
+					return err
+				}
+				if kbsCfg.BearerToken == "" {
+					return errors.New("missing KBS token. Provide it via BEARER_TOKEN environment")
+				}
+				return transferKey(kbsCfg, id)
+			},
 		},
 	}
+
+	flag.Usage = func() {
+		helpStr := strings.Builder{}
+		helpStr.WriteString("Available commands:\n")
+		for name, cmd := range commands {
+			helpStr.WriteString(fmt.Sprintf("    %s\n\t%s\n", name, cmd.ShortHelp))
+		}
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage of %s <<command>>:\n\n%s", os.Args[0], helpStr.String())
+	}
+	flag.Parse()
 
 	if len(os.Args) < 2 {
 		os.Args = append(os.Args, "list-all")
 	}
 
-	run, ok := commands[os.Args[1]]
+	cmd, ok := commands[os.Args[1]]
 	if !ok {
 		fmt.Fprintf(os.Stderr, "ERR: Unknown command '%s'", os.Args[1])
 		return
 	}
-	if err := run(os.Args[2:]); err != nil {
+	if err := cmd.Execute(os.Args[2:]); err != nil {
 		fmt.Fprintf(os.Stderr, "ERR: failed to execute: %v", err)
 	}
 }
@@ -244,7 +267,7 @@ func hsmTransfer(client httpclient.HttpClient, kbsCfg *config.KbsConfig, keyID, 
 			"Accept":        "application/json",
 		})
 		if err != nil {
-			return fmt.Errorf("Failed to initiate request: %v", err)
+			return fmt.Errorf("failed to initiate request: %v", err)
 		}
 		if status != http.StatusCreated {
 			return fmt.Errorf("create session returned unexpected status: %v", status)
@@ -266,7 +289,7 @@ func hsmTransfer(client httpclient.HttpClient, kbsCfg *config.KbsConfig, keyID, 
 		return nil
 
 	default:
-		return fmt.Errorf("Unexpected status code: %v", status)
+		return fmt.Errorf("unexpected status code: %v", status)
 	}
 
 	return nil
@@ -294,9 +317,14 @@ func createKey(kbs *config.KbsConfig, keyType string, keyLength int, keyTransfer
 	}
 	request = "{" + request + "}"
 
-	client, err := httpclient.NewHttpClient(nil)
+	client, err := httpclient.NewHttpClient(&httpclient.Config{
+		CACertFile:     kbs.CaCert,
+		KeyFile:        kbs.ClientKey,
+		ClientCertFile: kbs.ClientCert,
+		RequestTimeout: 2 * time.Minute,
+	})
 	if err != nil {
-		return fmt.Errorf("Failed to prepare the request: %v", err)
+		return fmt.Errorf("failed to prepare the request: %v", err)
 	}
 	header := map[string]string{
 		"Authorization": "Bearer " + kbs.BearerToken,
@@ -326,7 +354,12 @@ func deleteKey(kbs *config.KbsConfig, keyID string) error {
 	}
 	url := kbs.URL() + "/keys/" + keyID
 
-	client, err := httpclient.NewHttpClient(nil)
+	client, err := httpclient.NewHttpClient(&httpclient.Config{
+		CACertFile:     kbs.CaCert,
+		KeyFile:        kbs.ClientKey,
+		ClientCertFile: kbs.ClientCert,
+		RequestTimeout: 2 * time.Minute,
+	})
 	if err != nil {
 		return err
 	}
@@ -355,7 +388,12 @@ func deleteKey(kbs *config.KbsConfig, keyID string) error {
 func listKeys(kbs *config.KbsConfig) error {
 	url := kbs.URL() + "/keys" //?algorithm=RSA"
 
-	client, err := httpclient.NewHttpClient(nil)
+	client, err := httpclient.NewHttpClient(&httpclient.Config{
+		KeyFile:        kbs.ClientKey,
+		CACertFile:     kbs.CaCert,
+		ClientCertFile: kbs.ClientCert,
+		RequestTimeout: 5 * time.Minute,
+	})
 	if err != nil {
 		return err
 	}
@@ -366,10 +404,10 @@ func listKeys(kbs *config.KbsConfig) error {
 	}
 	resp, status, err := client.Get(url, header)
 	if err != nil {
-		return fmt.Errorf("Failed to execute request: %v", err)
+		return fmt.Errorf("failed to execute request: %v", err)
 	}
 	if status != http.StatusOK {
-		return fmt.Errorf("Server returned error status: %d (resp: %s)", status, string(resp))
+		return fmt.Errorf("server returned error status: %d (resp: %s)", status, string(resp))
 	}
 
 	fmt.Println(string(resp))
@@ -423,4 +461,27 @@ func downloadCert(cmsURL, token, cn, sanList, caCertDir, outKeyFile, outCertFile
 	task.SetName("download-cert-tls", "TLS-Client")
 
 	return task.Run()
+}
+
+func parseConfigFile(filePath string) (*config.KbsConfig, error) {
+	if filePath == "" {
+		return nil, fmt.Errorf("no KBS configuration file")
+	}
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+	cfg := &config.KbsConfig{}
+	defaults.Set(cfg)
+
+	if err := yaml.Unmarshal(data, cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse KBS configuration: %v", err)
+	}
+	// Ensure default values which are not set earlier
+	cfg.EnsureDefaults()
+	if token := os.Getenv("BEARER_TOKEN"); token != "" {
+		cfg.BearerToken = token
+	}
+
+	return cfg, nil
 }

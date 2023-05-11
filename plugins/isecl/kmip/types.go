@@ -19,9 +19,10 @@ import (
 	"github.com/gemalto/kmip-go/ttlv"
 )
 
-type CertInfo struct {
+type ObjectInfo struct {
 	ID    string
 	Label string
+	Type  string
 }
 
 type GetAttributesRequestPayload struct {
@@ -34,14 +35,16 @@ type GetAttributes struct {
 }
 type GetAttributesResponsePayload struct {
 	UniqueIdentifier string
-	Attributes       GetAttributes
+	Attribute        []kmip.Attribute // KMIP 1.4
+	Attributes       *GetAttributes   // KMIP 2.0
 }
 
 type RegisterRequestPayload struct {
-	ObjectType  kmip20.ObjectType
-	Attributes  ttlv.Value
-	Certificate *kmip.Certificate
-	PrivateKey  *kmip.PrivateKey
+	ObjectType        kmip20.ObjectType
+	TemplateAttribute []kmip.TemplateAttribute // KMIP 1.4
+	Attributes        ttlv.Value               // KMIP 2.0
+	Certificate       *kmip.Certificate
+	PrivateKey        *kmip.PrivateKey
 }
 
 type GetResponsePayload struct {
@@ -52,11 +55,13 @@ type GetResponsePayload struct {
 	PrivateKey       kmip.PrivateKey
 }
 
-type Attribute struct {
+type LocateAttributes struct {
 	ObjectType string
+	Name       *kmip.Name
 }
 type LocateRequestPayload struct {
-	Attributes interface{}
+	Attribute  []kmip.Attribute // KMIP 1.4
+	Attributes ttlv.Value       // KMIP 2.0
 }
 type LocateResponsePayload struct {
 	UniqueIdentifier []string
