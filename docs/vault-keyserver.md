@@ -3,13 +3,13 @@
 ## Introduction
 
 This document describes how to use [HashCorp Vault](https://www.vaultproject.io/)
-as a key server for provisioning the [TCS](https://githbu.com/intel/trusted-certificate-issuer)
+as a key server for provisioning the [TCS](https://github.com/intel/trusted-certificate-issuer)
 issuer's signing key securely using the trusted-attestation-controller (TAC).
 
 ## Prerequisites
 
 - Kubernetes cluster
-- [Trusted-certificate-issuer](https://githbu.com/intel/trusted-certificate-issuer)
+- [Trusted-certificate-issuer](https://github.com/intel/trusted-certificate-issuer)
 - [Trusted-attestation-controller with iSecL plugin](../plugins/isecl/README.md)
 - [Intel Secure Libraries v4.2.0-Beta](https://github.com/intel-secl/intel-secl/tree/v4.2.0-Beta):
   - Key Broker Service (KBS)
